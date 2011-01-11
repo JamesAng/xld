@@ -222,6 +222,9 @@ omap3530beagle_config :    unconfig
 igep00x0_config :    unconfig
 	@$(MKCONFIG) $(@:_config=) arm omap3 igep00x0
 	
+rockhopper_config :	unconfig
+	@./mkconfig $(@:_config=) arm omap3 rockhopper
+
 #########################################################################
 ## OMAP4 (ARM-CortexA9) Systems
 #########################################################################
