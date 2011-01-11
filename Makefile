@@ -231,6 +231,9 @@ tao3530_config :	unconfig
 tdm3730_config :	unconfig
 	@$(MKCONFIG) $(@:_config=) arm omap3 tdm3730
 	
+rockhopper_config :	unconfig
+	@./mkconfig $(@:_config=) arm omap3 rockhopper
+
 #########################################################################
 ## OMAP4 (ARM-CortexA9) Systems
 #########################################################################

@@ -64,6 +64,10 @@ ifeq ($(BOARD), tdm3730)
 COBJS    += k9f1g08r0a.o 
 endif 
 
+ifeq ($(BOARD), rockhopper)
+COBJS 	+= k9f1g08r0a.o
+endif
+
 ## Disabled for now:
 ##	  cs8900.o ct69000.o dataflash.o dc2114x.o ds1722.o \
 ##	  lan91c96.o mw_eeprom.o natsemi.o \
