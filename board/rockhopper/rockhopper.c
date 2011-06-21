@@ -207,9 +207,9 @@ void config_3430sdram_ddr(void)
 	/* setup sdrc to ball mux */
 	__raw_writel(SDP_SDRC_SHARING, SDRC_SHARING);
 
-	__raw_writel(0x1, SDRC_CS_CFG); /* 128MB/bank */
-	__raw_writel(SDP_SDRC_MDCFG_0_DDR, SDRC_MCFG_0);
-	__raw_writel(SDP_SDRC_MDCFG_0_DDR, SDRC_MCFG_1);
+	__raw_writel(0x2, SDRC_CS_CFG); /* 256MB/bank */
+	__raw_writel(SDP_SDRC_MDCFG_0_DDR_MICRON_XM, SDRC_MCFG_0);
+	__raw_writel(SDP_SDRC_MDCFG_0_DDR_MICRON_XM, SDRC_MCFG_1);
 	__raw_writel(MICRON_V_ACTIMA_165, SDRC_ACTIM_CTRLA_0);
 	__raw_writel(MICRON_V_ACTIMB_165, SDRC_ACTIM_CTRLB_0);
 	__raw_writel(MICRON_V_ACTIMA_165, SDRC_ACTIM_CTRLA_1);
