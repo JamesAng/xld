@@ -356,11 +356,14 @@ int get_board_revision(void)
 	/* board revisions <= R2410 connect 4030 irq_1 to gpio112             */
 	/* these boards should return a revision number of 0                  */
 	/* the code below forces a 4030 RTC irq to ensure that gpio112 is low */
+#ifdef CONFIG_DRIVER_OMAP34XX_I2C
+	i2c_init(CFG_I2C_SPEED, CFG_I2C_SLAVE);
 	data = 0x01;
 	i2c_write(0x4B, 0x29, 1, &data, 1);
 	data = 0x0c;
 	i2c_write(0x4B, 0x2b, 1, &data, 1);
 	i2c_read(0x4B, 0x2a, 1, &data, 1);
+#endif
 
 	if (!omap_request_gpio(112) &&
 	    !omap_request_gpio(113) &&
