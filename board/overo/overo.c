@@ -778,6 +778,25 @@ void s_init(void)
 	delay(100);
 	prcm_init();
 	per_clocks_enable();
+	if (!omap_request_gpio(66) &&
+	    !omap_request_gpio(67) &&
+	    !omap_request_gpio(68) &&
+	    !omap_request_gpio(69)) {
+
+		/* turn on left red led */
+		omap_set_gpio_dataout(66, 0);
+		omap_set_gpio_direction(66, 0);
+
+		omap_set_gpio_dataout(67, 1);
+		omap_set_gpio_direction(67, 0);
+
+		/* turn on right green led */
+		omap_set_gpio_dataout(68, 1);
+		omap_set_gpio_direction(68, 0);
+
+		omap_set_gpio_dataout(69, 0);
+		omap_set_gpio_direction(69, 0);
+	}
 	config_3430sdram_ddr();
 }
 
@@ -982,6 +1001,10 @@ void per_clocks_enable(void)
 	MUX_VAL(CP(GPMC_WAIT1),     (IEN  | PTU | EN  | M0)) /*GPMC_WAIT1*/\
 	MUX_VAL(CP(GPMC_WAIT2),     (IEN  | PTU | EN  | M4)) /*GPIO_64*/\
 	MUX_VAL(CP(GPMC_WAIT3),     (IEN  | PTU | EN  | M4)) /*GPIO_65*/\
+	MUX_VAL(CP(DSS_PCLK),       (IEN  | PTD | DIS | M4)) /*GPIO_66*/\
+	MUX_VAL(CP(DSS_HSYNC),      (IEN  | PTD | DIS | M4)) /*GPIO_67*/\
+	MUX_VAL(CP(DSS_VSYNC),      (IEN  | PTD | DIS | M4)) /*GPIO_68*/\
+	MUX_VAL(CP(DSS_ACBIAS),     (IEN  | PTD | DIS | M4)) /*GPIO_69*/\
 	MUX_VAL(CP(DSS_DATA18),     (IEN  | PTD | DIS | M4)) /*GPIO_88*/\
 	MUX_VAL(CP(DSS_DATA19),     (IEN  | PTD | DIS | M4)) /*GPIO_89*/\
 	MUX_VAL(CP(DSS_DATA20),     (IEN  | PTD | DIS | M4)) /*GPIO_90*/\
