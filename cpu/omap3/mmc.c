@@ -61,7 +61,7 @@ void twl4030_mmc_config(void)
 
 	data = 0x20;
 	i2c_write(0x4B, 0x82, 1, &data, 1);
-	data = 0x2;
+	data = 0x3;
 	i2c_write(0x4B, 0x85, 1, &data, 1);
 }
 
