@@ -103,8 +103,8 @@
 #define MR1_NWR7			5
 #define MR1_NWR8			6
 
-#define MR1_VALUE	(MR1_NWR3 << 5) | (MR1_WC << 4) | (MR1_BT_SEQ << 3)  \
-							| (MR1_BL8 << 0)
+#define MR1_VALUE	((MR1_NWR3 << 5) | (MR1_WC << 4) | (MR1_BT_SEQ << 3)  \
+							| (MR1_BL8 << 0))
 
 /* defines for MR2 */
 #define MR2_RL3_WL1			1
@@ -234,8 +234,34 @@ static inline void delay(unsigned long loops)
 void big_delay(unsigned int count)
 {
 	int i;
-	for (i=0; i<count; i++)
+	for (i = 0; i < count; i++)
 		delay(1);
+}
+
+void reset_phy(unsigned int base)
+{
+	__raw_writel(__raw_readl(base + IODFT_TLGC) | (1 << 10),
+							     base + IODFT_TLGC);
+}
+
+/* this flashes the Panda LEDs forever, if called after muxconf */
+
+void spam_leds(void)
+{
+	unsigned int v = __raw_readl(OMAP44XX_GPIO_BASE1 + __GPIO_OE);
+
+	/* set both LED gpio to output */
+	__raw_writel((v & ~(0x03 << 7)), OMAP44XX_GPIO_BASE1 + __GPIO_OE);
+
+	v = __raw_readl(OMAP44XX_GPIO_BASE1 + __GPIO_DATAOUT);
+	while (1) {
+		__raw_writel((v & ~(0x03 << 7)),
+					  OMAP44XX_GPIO_BASE1 + __GPIO_DATAOUT);
+		big_delay(3000000);
+		__raw_writel((v | (0x03 << 7)),
+					  OMAP44XX_GPIO_BASE1 + __GPIO_DATAOUT);
+		big_delay(3000000);
+	}
 }
 
 /* TODO: FREQ update method is not working so shadow registers programming
@@ -244,16 +270,17 @@ void big_delay(unsigned int count)
  */
 static int emif_config(unsigned int base)
 {
-	unsigned int reg_value, rev;
-	const struct ddr_regs *ddr_regs;
-	rev = omap_revision();
+	const struct ddr_regs *ddr_regs = &ddr_regs_400_mhz_2cs;
 
-	if(rev == OMAP4430_ES1_0)
+	switch (omap_revision()) {
+	case OMAP4430_ES1_0:
 		ddr_regs = &ddr_regs_380_mhz;
-	else if (rev == OMAP4430_ES2_0)
+		break;
+	case OMAP4430_ES2_0:
 		ddr_regs = &ddr_regs_200_mhz_2cs;
-	else if (rev == OMAP4430_ES2_1)
-		ddr_regs = &ddr_regs_400_mhz_2cs;
+		break;
+	}
+
 	/*
 	 * set SDRAM CONFIG register
 	 * EMIF_SDRAM_CONFIG[31:29] REG_SDRAM_TYPE = 4 for LPDDR2-S4
@@ -261,46 +288,43 @@ static int emif_config(unsigned int base)
 	 * EMIF_SDRAM_CONFIG[13:10] REG_CL = 3
 	 * EMIF_SDRAM_CONFIG[6:4] REG_IBANK = 3 - 8 banks
 	 * EMIF_SDRAM_CONFIG[3] REG_EBANK = 0 - CS0
- 	 * EMIF_SDRAM_CONFIG[2:0] REG_PAGESIZE = 2  - 512- 9 column
+	 * EMIF_SDRAM_CONFIG[2:0] REG_PAGESIZE = 2  - 512- 9 column
 	 * JDEC specs - S4-2Gb --8 banks -- R0-R13, C0-c8
 	 */
-	*(volatile int*)(base + EMIF_LPDDR2_NVM_CONFIG) &= 0xBFFFFFFF;
-	*(volatile int*)(base + EMIF_SDRAM_CONFIG) = ddr_regs->config_init;
+	__raw_writel(__raw_readl(base + EMIF_LPDDR2_NVM_CONFIG) & 0xbfffffff,
+						 base + EMIF_LPDDR2_NVM_CONFIG);
+	__raw_writel(ddr_regs->config_init, base + EMIF_SDRAM_CONFIG);
 
 	/* PHY control values */
-	*(volatile int*)(base + EMIF_DDR_PHY_CTRL_1) = DDR_PHY_CTRL_1_INIT;
-	*(volatile int*)(base + EMIF_DDR_PHY_CTRL_1_SHDW)= ddr_regs->phy_ctrl_1;
+	__raw_writel(DDR_PHY_CTRL_1_INIT, base + EMIF_DDR_PHY_CTRL_1);
+	__raw_writel(ddr_regs->phy_ctrl_1, base + EMIF_DDR_PHY_CTRL_1_SHDW);
 
 	/*
 	 * EMIF_READ_IDLE_CTRL
 	 */
-	*(volatile int*)(base + EMIF_READ_IDLE_CTRL) = READ_IDLE_CTRL;
-	*(volatile int*)(base + EMIF_READ_IDLE_CTRL_SHDW) = READ_IDLE_CTRL;
+	__raw_writel(READ_IDLE_CTRL, base + EMIF_READ_IDLE_CTRL);
+	__raw_writel(READ_IDLE_CTRL, base + EMIF_READ_IDLE_CTRL);
 
 	/*
 	 * EMIF_SDRAM_TIM_1
 	 */
-	*(volatile int*)(base + EMIF_SDRAM_TIM_1) = ddr_regs->tim1;
-	*(volatile int*)(base + EMIF_SDRAM_TIM_1_SHDW) = ddr_regs->tim1;
+	__raw_writel(ddr_regs->tim1, base + EMIF_SDRAM_TIM_1);
+	__raw_writel(ddr_regs->tim1, base + EMIF_SDRAM_TIM_1_SHDW);
 
 	/*
 	 * EMIF_SDRAM_TIM_2
 	 */
-	*(volatile int*)(base + EMIF_SDRAM_TIM_2) = ddr_regs->tim2;
-	*(volatile int*)(base + EMIF_SDRAM_TIM_2_SHDW) = ddr_regs->tim2;
+	__raw_writel(ddr_regs->tim2, base + EMIF_SDRAM_TIM_2);
+	__raw_writel(ddr_regs->tim2, base + EMIF_SDRAM_TIM_2_SHDW);
 
 	/*
 	 * EMIF_SDRAM_TIM_3
 	 */
-	*(volatile int*)(base + EMIF_SDRAM_TIM_3) = ddr_regs->tim3;
-	*(volatile int*)(base + EMIF_SDRAM_TIM_3_SHDW) = ddr_regs->tim3;
+	__raw_writel(ddr_regs->tim3, base + EMIF_SDRAM_TIM_3);
+	__raw_writel(ddr_regs->tim3, base + EMIF_SDRAM_TIM_3_SHDW);
 
-	*(volatile int*)(base + EMIF_ZQ_CONFIG) = ddr_regs->zq_config;
-	/*
-	 * EMIF_PWR_MGMT_CTRL
-	 */
-	//*(volatile int*)(base + EMIF_PWR_MGMT_CTRL) = PWR_MGMT_CTRL;
-	//*(volatile int*)(base + EMIF_PWR_MGMT_CTRL_SHDW) = PWR_MGMT_CTRL_OPP100;
+	__raw_writel(ddr_regs->zq_config, base + EMIF_ZQ_CONFIG);
+
 	/*
 	 * poll MR0 register (DAI bit)
 	 * REG_CS[31] = 0 -- Mode register command to CS0
@@ -308,59 +332,60 @@ static int emif_config(unsigned int base)
 	 * REG_ADDRESS[7:0] = 00 -- Refresh enable after MRW
 	 */
 
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG) = MR0_ADDR;
-	do {
-		reg_value = *(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA);
-	} while ((reg_value & 0x1) != 0);
+	__raw_writel(MR0_ADDR, base + EMIF_LPDDR2_MODE_REG_CFG);
 
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG) = CS1_MR(MR0_ADDR);
-	do {
-		reg_value = *(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA);
-	} while ((reg_value & 0x1) != 0);
+	while (__raw_readl(base + EMIF_LPDDR2_MODE_REG_DATA) & 1)
+		;
+
+	__raw_writel(CS1_MR(MR0_ADDR), base + EMIF_LPDDR2_MODE_REG_CFG);
+
+	while (__raw_readl(base + EMIF_LPDDR2_MODE_REG_DATA) & 1)
+		;
 
 
 	/* set MR10 register */
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG)= MR10_ADDR;
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA) = MR10_ZQINIT;
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG) = CS1_MR(MR10_ADDR);
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA) = MR10_ZQINIT;
+	__raw_writel(MR10_ADDR, base + EMIF_LPDDR2_MODE_REG_CFG);
+	__raw_writel(MR10_ZQINIT, base + EMIF_LPDDR2_MODE_REG_DATA);
+	__raw_writel(CS1_MR(MR10_ADDR), base + EMIF_LPDDR2_MODE_REG_CFG);
+	__raw_writel(MR10_ZQINIT, base + EMIF_LPDDR2_MODE_REG_DATA);
 
 	/* wait for tZQINIT=1us  */
 	delay(10);
 
 	/* set MR1 register */
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG)= MR1_ADDR;
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA) = ddr_regs->mr1;
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG) = CS1_MR(MR1_ADDR);
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA) = ddr_regs->mr1;
-
+	__raw_writel(MR1_ADDR, base + EMIF_LPDDR2_MODE_REG_CFG);
+	__raw_writel(ddr_regs->mr1, base + EMIF_LPDDR2_MODE_REG_DATA);
+	__raw_writel(CS1_MR(MR1_ADDR), base + EMIF_LPDDR2_MODE_REG_CFG);
+	__raw_writel(ddr_regs->mr1, base + EMIF_LPDDR2_MODE_REG_DATA);
 
 	/* set MR2 register RL=6 for OPP100 */
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG)= MR2_ADDR;
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA) = ddr_regs->mr2;
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG) = CS1_MR(MR2_ADDR);
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA) = ddr_regs->mr2;
+	__raw_writel(MR2_ADDR, base + EMIF_LPDDR2_MODE_REG_CFG);
+	__raw_writel(ddr_regs->mr2, base + EMIF_LPDDR2_MODE_REG_DATA);
+	__raw_writel(CS1_MR(MR2_ADDR), base + EMIF_LPDDR2_MODE_REG_CFG);
+	__raw_writel(ddr_regs->mr2, base + EMIF_LPDDR2_MODE_REG_DATA);
 
 	/* Set SDRAM CONFIG register again here with final RL-WL value */
-	*(volatile int*)(base + EMIF_SDRAM_CONFIG) = ddr_regs->config_final;
-	*(volatile int*)(base + EMIF_DDR_PHY_CTRL_1) = ddr_regs->phy_ctrl_1;
+	__raw_writel(ddr_regs->config_final, base + EMIF_SDRAM_CONFIG);
+	__raw_writel(ddr_regs->phy_ctrl_1, base + EMIF_DDR_PHY_CTRL_1);
 
 	/*
 	 * EMIF_SDRAM_REF_CTRL
 	 * refresh rate = DDR_CLK / reg_refresh_rate
 	 * 3.9 uS = (400MHz)	/ reg_refresh_rate
 	 */
-	*(volatile int*)(base + EMIF_SDRAM_REF_CTRL) = ddr_regs->ref_ctrl;
-	*(volatile int*)(base + EMIF_SDRAM_REF_CTRL_SHDW) = ddr_regs->ref_ctrl;
+	__raw_writel(ddr_regs->ref_ctrl, base + EMIF_SDRAM_REF_CTRL);
+	__raw_writel(ddr_regs->ref_ctrl, base + EMIF_SDRAM_REF_CTRL_SHDW);
 
 	/* set MR16 register */
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG)= MR16_ADDR | REF_EN;
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA) = 0;
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_CFG) =
-						 CS1_MR(MR16_ADDR | REF_EN);
-	*(volatile int*)(base + EMIF_LPDDR2_MODE_REG_DATA) = 0;
+	__raw_writel(MR16_ADDR | REF_EN, base + EMIF_LPDDR2_MODE_REG_CFG);
+	__raw_writel(0, base + EMIF_LPDDR2_MODE_REG_DATA);
+	__raw_writel(CS1_MR(MR16_ADDR | REF_EN),
+					       base + EMIF_LPDDR2_MODE_REG_CFG);
+	__raw_writel(0, base + EMIF_LPDDR2_MODE_REG_DATA);
+
 	/* LPDDR2 init complete */
 
+	return 0;
 }
 /*****************************************
  * Routine: ddr_init
@@ -370,46 +395,46 @@ static int emif_config(unsigned int base)
  *****************************************/
 static void ddr_init(void)
 {
-	unsigned int base_addr, rev;
-	rev = omap_revision();
+	unsigned int base_addr;
 
-	if (rev == OMAP4430_ES1_0)
-	{
+	switch (omap_revision()) {
+
+	case OMAP4430_ES1_0:
 		/* Configurte the Control Module DDRIO device */
-		__raw_writel(0x1c1c1c1c, 0x4A100638);
-		__raw_writel(0x1c1c1c1c, 0x4A10063c);
-		__raw_writel(0x1c1c1c1c, 0x4A100640);
-		__raw_writel(0x1c1c1c1c, 0x4A100648);
-		__raw_writel(0x1c1c1c1c, 0x4A10064c);
-		__raw_writel(0x1c1c1c1c, 0x4A100650);
-		/* LPDDR2IO set to NMOS PTV */
-		__raw_writel(0x00ffc000, 0x4A100704);
-	} else if (rev == OMAP4430_ES2_0) {
-		__raw_writel(0x9e9e9e9e, 0x4A100638);
-		__raw_writel(0x9e9e9e9e, 0x4A10063c);
-		__raw_writel(0x9e9e9e9e, 0x4A100640);
-		__raw_writel(0x9e9e9e9e, 0x4A100648);
-		__raw_writel(0x9e9e9e9e, 0x4A10064c);
-		__raw_writel(0x9e9e9e9e, 0x4A100650);
-		/* LPDDR2IO set to NMOS PTV */
-		__raw_writel(0x00ffc000, 0x4A100704);
+		__raw_writel(0x1c1c1c1c, OMAP44XX_CONTROL_LPDDR2IO1_0);
+		__raw_writel(0x1c1c1c1c, OMAP44XX_CONTROL_LPDDR2IO1_1);
+		__raw_writel(0x1c1c1c1c, OMAP44XX_CONTROL_LPDDR2IO1_2);
+		__raw_writel(0x1c1c1c1c, OMAP44XX_CONTROL_LPDDR2IO2_0);
+		__raw_writel(0x1c1c1c1c, OMAP44XX_CONTROL_LPDDR2IO2_1);
+		__raw_writel(0x1c1c1c1c, OMAP44XX_CONTROL_LPDDR2IO2_2);
+		/* LPDDR2IO set to NMOS PTV  !!! really EFUSE2? */
+		__raw_writel(0x00ffc000, OMAP44XX_CONTROL_EFUSE_2);
+
+		/* Both EMIFs 128 byte interleaved */
+		__raw_writel(0x80540300, DMM_BASE + DMM_LISA_MAP_0);
+		break;
+	case OMAP4430_ES2_0:
+		__raw_writel(0x9e9e9e9e, OMAP44XX_CONTROL_LPDDR2IO1_0);
+		__raw_writel(0x9e9e9e9e, OMAP44XX_CONTROL_LPDDR2IO1_1);
+		__raw_writel(0x9e9e9e9e, OMAP44XX_CONTROL_LPDDR2IO1_2);
+		__raw_writel(0x9e9e9e9e, OMAP44XX_CONTROL_LPDDR2IO2_0);
+		__raw_writel(0x9e9e9e9e, OMAP44XX_CONTROL_LPDDR2IO2_1);
+		__raw_writel(0x9e9e9e9e, OMAP44XX_CONTROL_LPDDR2IO2_2);
+		/* LPDDR2IO set to NMOS PTV  !!! really EFUSE2? */
+		__raw_writel(0x00ffc000, OMAP44XX_CONTROL_EFUSE_2);
+		/* fall thru */
+	default:
+		/* Both EMIFs 128 byte interleaved */
+		__raw_writel(0x80640300, DMM_BASE + DMM_LISA_MAP_0);
+		break;
 	}
 
 	/*
 	 * DMM Configuration
 	 */
 
-	/* Both EMIFs 128 byte interleaved*/
-	if (rev == OMAP4430_ES1_0)
-		*(volatile int*)(DMM_BASE + DMM_LISA_MAP_0) = 0x80540300;
-	else
-		*(volatile int*)(DMM_BASE + DMM_LISA_MAP_0) = 0x80640300;
-
-	/* EMIF2 only at 0x90000000 */
-	//*(volatile int*)(DMM_BASE + DMM_LISA_MAP_1) = 0x90400200;
-
-	*(volatile int*)(DMM_BASE + DMM_LISA_MAP_2) = 0x00000000;
-	*(volatile int*)(DMM_BASE + DMM_LISA_MAP_3) = 0xFF020100;
+	__raw_writel(0x00000000, DMM_BASE + DMM_LISA_MAP_2);
+	__raw_writel(0xFF020100, DMM_BASE + DMM_LISA_MAP_3);
 
 	/* DDR needs to be initialised @ 19.2 MHz
 	 * So put core DPLL in bypass mode
@@ -417,11 +442,22 @@ static void ddr_init(void)
 	 */
 	configure_core_dpll_no_lock();
 
+	/*
+	 * the following is re-enabled because without the EMIF going idle,
+	 * the shadow DPLL update scheme can delay for minutes until it is
+	 * able to apply the new settings... it waits until EMIF idle.
+	 *
+	 * This is seen in the case the ROM enabled USB boot being tried before
+	 * normal boot over MMC.
+	 */
+
 	/* No IDLE: BUG in SDC */
-	//sr32(CM_MEMIF_CLKSTCTRL, 0, 32, 0x2);
-	//while(((*(volatile int*)CM_MEMIF_CLKSTCTRL) & 0x700) != 0x700);
-	*(volatile int*)(EMIF1_BASE + EMIF_PWR_MGMT_CTRL) = 0x0;
-	*(volatile int*)(EMIF2_BASE + EMIF_PWR_MGMT_CTRL) = 0x0;
+	sr32(CM_MEMIF_CLKSTCTRL, 0, 32, 0x2);
+	while ((__raw_readl(CM_MEMIF_CLKSTCTRL) & 0x700) != 0x700)
+		;
+
+	__raw_writel(0, EMIF1_BASE + EMIF_PWR_MGMT_CTRL);
+	__raw_writel(0, EMIF2_BASE + EMIF_PWR_MGMT_CTRL);
 
 	base_addr = EMIF1_BASE;
 	emif_config(base_addr);
@@ -434,27 +470,25 @@ static void ddr_init(void)
 	/* TODO: SDC needs few hacks to get DDR freq update working */
 
 	/* Set DLL_OVERRIDE = 0 */
-	*(volatile int*)CM_DLL_CTRL = 0x0;
+	__raw_writel(0, CM_DLL_CTRL);
 
 	delay(200);
 
 	/* Check for DDR PHY ready for EMIF1 & EMIF2 */
-	while((((*(volatile int*)(EMIF1_BASE + EMIF_STATUS))&(0x04)) != 0x04) \
-	|| (((*(volatile int*)(EMIF2_BASE + EMIF_STATUS))&(0x04)) != 0x04));
+	while (!(__raw_readl(EMIF1_BASE + EMIF_STATUS) & 4) ||
+				   !(__raw_readl(EMIF2_BASE + EMIF_STATUS) & 4))
+		;
 
 	/* Reprogram the DDR PYHY Control register */
 	/* PHY control values */
 
 	sr32(CM_MEMIF_EMIF_1_CLKCTRL, 0, 32, 0x1);
-        sr32(CM_MEMIF_EMIF_2_CLKCTRL, 0, 32, 0x1);
+	sr32(CM_MEMIF_EMIF_2_CLKCTRL, 0, 32, 0x1);
 
 	/* Put the Core Subsystem PD to ON State */
 
-	/* No IDLE: BUG in SDC */
-	//sr32(CM_MEMIF_CLKSTCTRL, 0, 32, 0x2);
-	//while(((*(volatile int*)CM_MEMIF_CLKSTCTRL) & 0x700) != 0x700);
-	*(volatile int*)(EMIF1_BASE + EMIF_PWR_MGMT_CTRL) = 0x80000000;
-	*(volatile int*)(EMIF2_BASE + EMIF_PWR_MGMT_CTRL) = 0x80000000;
+	__raw_writel(1 << 31, EMIF1_BASE + EMIF_PWR_MGMT_CTRL);
+	__raw_writel(1 << 31, EMIF2_BASE + EMIF_PWR_MGMT_CTRL);
 
 	/* SYSTEM BUG:
 	 * In n a specific situation, the OCP interface between the DMM and
@@ -468,9 +502,9 @@ static void ddr_init(void)
 	 * be kept higher than default 0x7. As per recommondation 0x0A will
 	 * be used for better performance with REG_LL_THRESH_MAX = 0x00
 	 */
-	if (rev == OMAP4430_ES1_0) {
-		*(volatile int*)(EMIF1_BASE + EMIF_L3_CONFIG) = 0x0A0000FF;
-		*(volatile int*)(EMIF2_BASE + EMIF_L3_CONFIG) = 0x0A0000FF;
+	if (omap_revision() == OMAP4430_ES1_0) {
+		__raw_writel(0x0A0000FF, EMIF1_BASE + EMIF_L3_CONFIG);
+		__raw_writel(0x0A0000FF, EMIF2_BASE + EMIF_L3_CONFIG);
 	}
 
 	/*
@@ -485,9 +519,11 @@ static void ddr_init(void)
 	reset_phy(EMIF1_BASE);
 	reset_phy(EMIF2_BASE);
 
-	*((volatile int *)0x80000000) = 0;
-	*((volatile int *)0x80000080) = 0;
-	//*((volatile int *)0x90000000) = 0;
+	__raw_writel(0, OMAP44XX_SDRC_CS0);
+	__raw_writel(0, OMAP44XX_SDRC_CS0);
+
+	/* MEMIF Clock Domain -> HW_AUTO */
+	sr32(CM_MEMIF_CLKSTCTRL, 0, 32, 0x3);
 }
 /*****************************************
  * Routine: board_init
@@ -495,6 +531,49 @@ static void ddr_init(void)
  *****************************************/
 int board_init(void)
 {
+	unsigned int rev = omap_revision();
+	unsigned int v;
+
+	/*
+	 * If the ROM has started the OTG stuff, stop it and
+	 * make it look as if uninitialized for Linux or U-Boot
+	 */
+
+	/* hold OTG phy in reset (GPIO_62 -> active low reset) */
+
+	v = __raw_readl(OMAP44XX_GPIO_BASE2 + __GPIO_OE);
+	__raw_writel((v & ~(1 << 30)), OMAP44XX_GPIO_BASE2 + __GPIO_OE);
+
+	v = __raw_readl(OMAP44XX_GPIO_BASE2 + __GPIO_DATAOUT);
+	__raw_writel((v & ~(1 << 30)), OMAP44XX_GPIO_BASE2 + __GPIO_DATAOUT);
+
+	if (rev == OMAP4430_ES1_0)
+		return 0;
+
+	if (__raw_readl(OMAP44XX_GPIO_BASE6 + __GPIO_DATAIN) & (1 << 22)) {
+		/* enable software ioreq */
+		sr32(OMAP44XX_SCRM_AUXCLK3, 8, 1, 0x1);
+		/* set for sys_clk (38.4MHz) */
+		sr32(OMAP44XX_SCRM_AUXCLK3, 1, 2, 0x0);
+		/* set divisor to 2 */
+		sr32(OMAP44XX_SCRM_AUXCLK3, 16, 4, 0x1);
+		/* set the clock source to active */
+		sr32(OMAP44XX_SCRM_ALTCLKSRC, 0, 1, 0x1);
+		/* enable clocks */
+		sr32(OMAP44XX_SCRM_ALTCLKSRC, 2, 2, 0x3);
+	} else {
+		/* enable software ioreq */
+		sr32(OMAP44XX_SCRM_AUXCLK1, 8, 1, 0x1);
+		/* set for PER_DPLL */
+		sr32(OMAP44XX_SCRM_AUXCLK1, 1, 2, 0x2);
+		/* set divisor to 16 */
+		sr32(OMAP44XX_SCRM_AUXCLK1, 16, 4, 0xf);
+		/* set the clock source to active */
+		sr32(OMAP44XX_SCRM_ALTCLKSRC, 0, 1, 0x1);
+		/* enable clocks */
+		sr32(OMAP44XX_SCRM_ALTCLKSRC, 2, 2, 0x3);
+	}
+
 	return 0;
 }
 
@@ -505,7 +584,7 @@ int board_init(void)
 u32 get_mem_type(void)
 {
 	/* no nand, so return GPMC_NONE */
-	return GPMC_NONE;	
+	return GPMC_NONE;
 }
 
 /*****************************************
@@ -550,66 +629,72 @@ void secure_unlock_mem(void)
  ***********************************************************/
 void try_unlock_memory(void)
 {
-	int mode;
-
 	/* if GP device unlock device SRAM for general use */
 	/* secure code breaks for Secure/Emulation device - HS/E/T*/
-	return;
 }
 
 
 #if defined(CONFIG_MPU_600) || defined(CONFIG_MPU_1000)
-static scale_vcores(void)
+static int scale_vcores(void)
 {
 	unsigned int rev = omap_revision();
+
 	/* For VC bypass only VCOREx_CGF_FORCE  is necessary and
 	 * VCOREx_CFG_VOLTAGE  changes can be discarded
 	 */
-	/* PRM_VC_CFG_I2C_MODE */
-	*(volatile int*)(0x4A307BA8) = 0x0;
-	/* PRM_VC_CFG_I2C_CLK */
-	*(volatile int*)(0x4A307BAC) = 0x6026;
+	__raw_writel(0, OMAP44XX_PRM_VC_CFG_I2C_MODE);
+	__raw_writel(0x6026, OMAP44XX_PRM_VC_CFG_I2C_CLK);
 
 	/* set VCORE1 force VSEL */
-	/* PRM_VC_VAL_BYPASS) */
-	if(rev == OMAP4430_ES1_0)
-		*(volatile int*)(0x4A307BA0) = 0x3B5512;
+	if (rev == OMAP4430_ES1_0)
+		__raw_writel(0x3B5512, OMAP44XX_PRM_VC_VAL_BYPASS);
 	else
-		*(volatile int*)(0x4A307BA0) = 0x3A5512;
+		__raw_writel(0x3A5512, OMAP44XX_PRM_VC_VAL_BYPASS);
 
-	*(volatile int*)(0x4A307BA0) |= 0x1000000;
-	while((*(volatile int*)(0x4A307BA0)) & 0x1000000);
+	__raw_writel(__raw_readl(OMAP44XX_PRM_VC_VAL_BYPASS) | 0x1000000,
+						    OMAP44XX_PRM_VC_VAL_BYPASS);
+	while (__raw_readl(OMAP44XX_PRM_VC_VAL_BYPASS) & 0x1000000)
+		;
 
-	/* PRM_IRQSTATUS_MPU */
-	*(volatile int*)(0x4A306010) = *(volatile int*)(0x4A306010);
-
+	__raw_writel(__raw_readl(OMAP44XX_PRM_IRQSTATUS_MPU_A9),
+						 OMAP44XX_PRM_IRQSTATUS_MPU_A9);
 
 	/* FIXME: set VCORE2 force VSEL, Check the reset value */
-	/* PRM_VC_VAL_BYPASS) */
-        if(rev == OMAP4430_ES1_0)
-		*(volatile int*)(0x4A307BA0) = 0x315B12;
+	if (rev == OMAP4430_ES1_0)
+		__raw_writel(0x315B12, OMAP44XX_PRM_VC_VAL_BYPASS);
 	else
-		*(volatile int*)(0x4A307BA0) = 0x295B12;
-	*(volatile int*)(0x4A307BA0) |= 0x1000000;
-	while((*(volatile int*)(0x4A307BA0)) & 0x1000000);
+		__raw_writel(0x295B12, OMAP44XX_PRM_VC_VAL_BYPASS);
 
-	/* PRM_IRQSTATUS_MPU */
-	*(volatile int*)(0x4A306010) = *(volatile int*)(0x4A306010);
+	__raw_writel(__raw_readl(OMAP44XX_PRM_VC_VAL_BYPASS) | 0x1000000,
+						    OMAP44XX_PRM_VC_VAL_BYPASS);
+	while (__raw_readl(OMAP44XX_PRM_VC_VAL_BYPASS) & 0x1000000)
+		;
+
+	__raw_writel(__raw_readl(OMAP44XX_PRM_IRQSTATUS_MPU_A9),
+						 OMAP44XX_PRM_IRQSTATUS_MPU_A9);
 
 	/*/set VCORE3 force VSEL */
-	/* PRM_VC_VAL_BYPASS */
-	if(rev == OMAP4430_ES1_0)
-		*(volatile int*)(0x4A307BA0) = 0x316112;
-	else if (rev == OMAP4430_ES2_0)
-		*(volatile int*)(0x4A307BA0) = 0x296112;
-	else if (rev == OMAP4430_ES2_1)
-		*(volatile int*)(0x4A307BA0) = 0x2A6112;
-	*(volatile int*)(0x4A307BA0) |= 0x1000000;
-	while((*(volatile int*)(0x4A307BA0)) & 0x1000000);
+	switch (rev) {
+	case OMAP4430_ES1_0:
+		__raw_writel(0x316112, OMAP44XX_PRM_VC_VAL_BYPASS);
+		break;
+	case OMAP4430_ES2_0:
+		__raw_writel(0x296112, OMAP44XX_PRM_VC_VAL_BYPASS);
+		break;
+	case OMAP4430_ES2_1:
+	default:
+		__raw_writel(0x2A6112, OMAP44XX_PRM_VC_VAL_BYPASS);
+		break;
+	}
+	__raw_writel(__raw_readl(OMAP44XX_PRM_VC_VAL_BYPASS) | 0x1000000,
+						    OMAP44XX_PRM_VC_VAL_BYPASS);
+	while (__raw_readl(OMAP44XX_PRM_VC_VAL_BYPASS) & 0x1000000)
+		;
 
-	/* PRM_IRQSTATUS_MPU */
-	*(volatile int*)(0x4A306010) = *(volatile int*)(0x4A306010);
+	__raw_writel(__raw_readl(OMAP44XX_PRM_IRQSTATUS_MPU_A9),
+						 OMAP44XX_PRM_IRQSTATUS_MPU_A9);
 
+	return 0;
 }
 #endif
 
@@ -621,42 +706,28 @@ static scale_vcores(void)
 
 void s_init(void)
 {
-	unsigned int rev = omap_revision();
-
-	set_muxconf_regs();
-	delay(100);
-
-	/* Writing to AuxCR in U-boot using SMI for GP/EMU DEV */
-	/* Currently SMI in Kernel on ES2 devices seems to have an isse
-	 * Once that is resolved, we can postpone this config to kernel
+	/*
+	 * this is required to survive the muxconf in the case the ROM
+	 * started up USB OTG
 	 */
-	//setup_auxcr(get_device_type(), external_boot);
-
-	ddr_init();
-
 /* Set VCORE1 = 1.3 V, VCORE2 = VCORE3 = 1.21V */
 #if defined(CONFIG_MPU_600) || defined(CONFIG_MPU_1000)
 	scale_vcores();
-#endif	
+#endif
+
 	prcm_init();
 
-	if(rev != OMAP4430_ES1_0) {
-		if (__raw_readl(0x4805D138) & (1<<22)) {
-			sr32(0x4A30a31C, 8, 1, 0x1);  /* enable software ioreq */
-			sr32(0x4A30a31C, 1, 2, 0x0);  /* set for sys_clk (38.4MHz) */
-			sr32(0x4A30a31C, 16, 4, 0x1); /* set divisor to 2 */
-			sr32(0x4A30a110, 0, 1, 0x1);  /* set the clock source to active */
-			sr32(0x4A30a110, 2, 2, 0x3);  /* enable clocks */
-		}
-		else {
-			sr32(0x4A30a314, 8, 1, 0x1); /* enable software ioreq */
-			sr32(0x4A30a314, 1, 2, 0x2); /* set for PER_DPLL */
-			sr32(0x4A30a314, 16, 4, 0xf); /* set divisor to 16 */
-			sr32(0x4A30a110, 0, 1, 0x1); /* set the clock source to active */
-			sr32(0x4A30a110, 2, 2, 0x3); /* enable clocks */
-		}
-	}
+	set_muxconf_regs();
 
+	delay(100);
+
+	/* Writing to AuxCR in U-boot using SMI for GP/EMU DEV */
+	/* Currently SMI in Kernel on ES2 devices seems to have an issue
+	 * Once that is resolved, we can postpone this config to kernel
+	 */
+	/* setup_auxcr(get_device_type(), external_boot); */
+
+	ddr_init();
 }
 
 /*******************************************************
@@ -674,10 +745,8 @@ int misc_init_r(void)
  ******************************************************/
 void wait_for_command_complete(unsigned int wd_base)
 {
-	int pending = 1;
-	do {
-		pending = __raw_readl(wd_base + WWPS);
-	} while (pending);
+	while (__raw_readl(wd_base + WWPS))
+		;
 }
 
 /*******************************************************************
@@ -695,31 +764,6 @@ int dram_init(void)
 	return 0;
 }
 
-#define		OMAP44XX_WKUP_CTRL_BASE		0x4A31E000 
-#if 1
-#define M0_SAFE M0
-#define M1_SAFE M1
-#define M2_SAFE M2
-#define M4_SAFE M4
-#define M7_SAFE M7
-#define M3_SAFE M3
-#define M5_SAFE M5
-#define M6_SAFE M6
-#else
-#define M0_SAFE M7
-#define M1_SAFE M7
-#define M2_SAFE M7
-#define M4_SAFE M7
-#define M7_SAFE M7
-#define M3_SAFE M7
-#define M5_SAFE M7
-#define M6_SAFE M7
-#endif
-#define		MV(OFFSET, VALUE)\
-			__raw_writew((VALUE), OMAP44XX_CTRL_BASE + (OFFSET));
-#define		MV1(OFFSET, VALUE)\
-			__raw_writew((VALUE), OMAP44XX_WKUP_CTRL_BASE + (OFFSET));
-
 #define		CP(x)	(CONTROL_PADCONF_##x)
 #define		WK(x)	(CONTROL_WKUP_##x)
 /*
@@ -733,467 +777,373 @@ int dram_init(void)
  * The commented string gives the final mux configuration for that pin
  */
 
-#define MUX_DEFAULT_OMAP4() \
-	MV(CP(GPMC_AD0) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* sdmmc2_dat0 */ \
-	MV(CP(GPMC_AD1) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* sdmmc2_dat1 */ \
-	MV(CP(GPMC_AD2) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* sdmmc2_dat2 */ \
-	MV(CP(GPMC_AD3) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* sdmmc2_dat3 */ \
-	MV(CP(GPMC_AD4) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* sdmmc2_dat4 */ \
-	MV(CP(GPMC_AD5) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* sdmmc2_dat5 */ \
-	MV(CP(GPMC_AD6) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* sdmmc2_dat6 */ \
-	MV(CP(GPMC_AD7) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* sdmmc2_dat7 */ \
-	MV(CP(GPMC_AD8) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M3))  /* gpio_32 */ \
-	MV(CP(GPMC_AD9) , ( PTU | IEN | M3))  /* gpio_33 */ \
-	MV(CP(GPMC_AD10) , ( PTU | IEN | M3))  /* gpio_34 */ \
-	MV(CP(GPMC_AD11) , ( PTU | IEN | M3))  /* gpio_35 */ \
-	MV(CP(GPMC_AD12) , ( PTU | IEN | M3))  /* gpio_36 */ \
-	MV(CP(GPMC_AD13) , ( PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3))  /* gpio_37 */ \
-	MV(CP(GPMC_AD14) , ( PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3))  /* gpio_38 */ \
-	MV(CP(GPMC_AD15) , ( PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3))  /* gpio_39 */ \
-	MV(CP(GPMC_A16) , ( M3))  /* gpio_40 */ \
-	MV(CP(GPMC_A17) , ( PTD | M3))  /* gpio_41 */ \
-	MV(CP(GPMC_A18) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_row6 */ \
-	MV(CP(GPMC_A19) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_row7 */ \
-	MV(CP(GPMC_A20) , ( IEN | M3))  /* gpio_44 */ \
-	MV(CP(GPMC_A21) , ( M3))  /* gpio_45 */ \
-	MV(CP(GPMC_A22) , ( M3))  /* gpio_46 */ \
-	MV(CP(GPMC_A23) , ( OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_col7 */ \
-	MV(CP(GPMC_A24) , ( PTD | M3))  /* gpio_48 */ \
-	MV(CP(GPMC_A25) , ( PTD | M3))  /* gpio_49 */ \
-	MV(CP(GPMC_NCS0) , ( M3))  /* gpio_50 */ \
-	MV(CP(GPMC_NCS1) , ( IEN | M3))  /* gpio_51 */ \
-	MV(CP(GPMC_NCS2) , ( IEN | M3))  /* gpio_52 */ \
-	MV(CP(GPMC_NCS3) , ( IEN | M3))  /* gpio_53 */ \
-	MV(CP(GPMC_NWP) , ( M3))  /* gpio_54 */ \
-	MV(CP(GPMC_CLK) , ( PTD | M3))  /* gpio_55 */ \
-	MV(CP(GPMC_NADV_ALE) , ( M3))  /* gpio_56 */ \
-	MV(CP(GPMC_NOE) , ( PTU | IEN | OFF_EN | OFF_OUT_PTD | M1))  /* sdmmc2_clk */ \
-	MV(CP(GPMC_NWE) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* sdmmc2_cmd */ \
-	MV(CP(GPMC_NBE0_CLE) , ( M3))  /* gpio_59 */ \
-	MV(CP(GPMC_NBE1) , ( PTD | M3))  /* gpio_60 */ \
-	MV(CP(GPMC_WAIT0) , ( PTU | IEN | M3))  /* gpio_61 */ \
-	MV(CP(GPMC_WAIT1),	(PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3)) /* gpio_62 */ \
-	MV(CP(C2C_DATA11) , ( PTD | M3))  /* gpio_100 */ \
-	MV(CP(C2C_DATA12) , ( PTD | IEN | M3))  /* gpio_101 */ \
-	MV(CP(C2C_DATA13) , ( PTD | M3))  /* gpio_102 */ \
-	MV(CP(C2C_DATA14) , ( M1))  /* dsi2_te0 */ \
-	MV(CP(C2C_DATA15) , ( PTD | M3))  /* gpio_104 */ \
-	MV(CP(HDMI_HPD) , ( M0))  /* hdmi_hpd */ \
-	MV(CP(HDMI_CEC) , ( M0))  /* hdmi_cec */ \
-	MV(CP(HDMI_DDC_SCL) , ( PTU | M0))  /* hdmi_ddc_scl */ \
-	MV(CP(HDMI_DDC_SDA) , ( PTU | IEN | M0))  /* hdmi_ddc_sda */ \
-	MV(CP(CSI21_DX0) , ( IEN | M0))  /* csi21_dx0 */ \
-	MV(CP(CSI21_DY0) , ( IEN | M0))  /* csi21_dy0 */ \
-	MV(CP(CSI21_DX1) , ( IEN | M0))  /* csi21_dx1 */ \
-	MV(CP(CSI21_DY1) , ( IEN | M0))  /* csi21_dy1 */ \
-	MV(CP(CSI21_DX2) , ( IEN | M0))  /* csi21_dx2 */ \
-	MV(CP(CSI21_DY2) , ( IEN | M0))  /* csi21_dy2 */ \
-	MV(CP(CSI21_DX3) , ( PTD | M7))  /* csi21_dx3 */ \
-	MV(CP(CSI21_DY3) , ( PTD | M7))  /* csi21_dy3 */ \
-	MV(CP(CSI21_DX4) , ( PTD | OFF_EN | OFF_PD | OFF_IN | M7))  /* csi21_dx4 */ \
-	MV(CP(CSI21_DY4) , ( PTD | OFF_EN | OFF_PD | OFF_IN | M7))  /* csi21_dy4 */ \
-	MV(CP(CSI22_DX0) , ( IEN | M0))  /* csi22_dx0 */ \
-	MV(CP(CSI22_DY0) , ( IEN | M0))  /* csi22_dy0 */ \
-	MV(CP(CSI22_DX1) , ( IEN | M0))  /* csi22_dx1 */ \
-	MV(CP(CSI22_DY1) , ( IEN | M0))  /* csi22_dy1 */ \
-	MV(CP(CAM_SHUTTER) , ( OFF_EN | OFF_PD | OFF_OUT_PTD | M0))  /* cam_shutter */ \
-	MV(CP(CAM_STROBE) , ( OFF_EN | OFF_PD | OFF_OUT_PTD | M0))  /* cam_strobe */ \
-	MV(CP(CAM_GLOBALRESET) , ( PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3))  /* gpio_83 */ \
-	MV(CP(USBB1_ULPITLL_CLK) , ( PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_clk */ \
-	MV(CP(USBB1_ULPITLL_STP) , ( OFF_EN | OFF_OUT_PTD | M4))  /* usbb1_ulpiphy_stp */ \
-	MV(CP(USBB1_ULPITLL_DIR) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_dir */ \
-	MV(CP(USBB1_ULPITLL_NXT) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_nxt */ \
-	MV(CP(USBB1_ULPITLL_DAT0) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_dat0 */ \
-	MV(CP(USBB1_ULPITLL_DAT1) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_dat1 */ \
-	MV(CP(USBB1_ULPITLL_DAT2) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_dat2 */ \
-	MV(CP(USBB1_ULPITLL_DAT3) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_dat3 */ \
-	MV(CP(USBB1_ULPITLL_DAT4) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_dat4 */ \
-	MV(CP(USBB1_ULPITLL_DAT5) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_dat5 */ \
-	MV(CP(USBB1_ULPITLL_DAT6) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_dat6 */ \
-	MV(CP(USBB1_ULPITLL_DAT7) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M4))  /* usbb1_ulpiphy_dat7 */ \
-	MV(CP(USBB1_HSIC_DATA) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* usbb1_hsic_data */ \
-	MV(CP(USBB1_HSIC_STROBE) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* usbb1_hsic_strobe */ \
-	MV(CP(USBC1_ICUSB_DP) , ( IEN | M0))  /* usbc1_icusb_dp */ \
-	MV(CP(USBC1_ICUSB_DM) , ( IEN | M0))  /* usbc1_icusb_dm */ \
-	MV(CP(SDMMC1_CLK) , ( PTU | OFF_EN | OFF_OUT_PTD | M0))  /* sdmmc1_clk */ \
-	MV(CP(SDMMC1_CMD) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc1_cmd */ \
-	MV(CP(SDMMC1_DAT0) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc1_dat0 */ \
-	MV(CP(SDMMC1_DAT1) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc1_dat1 */ \
-	MV(CP(SDMMC1_DAT2) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc1_dat2 */ \
-	MV(CP(SDMMC1_DAT3) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc1_dat3 */ \
-	MV(CP(SDMMC1_DAT4) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc1_dat4 */ \
-	MV(CP(SDMMC1_DAT5) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc1_dat5 */ \
-	MV(CP(SDMMC1_DAT6) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc1_dat6 */ \
-	MV(CP(SDMMC1_DAT7) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc1_dat7 */ \
-	MV(CP(ABE_MCBSP2_CLKX) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* abe_mcbsp2_clkx */ \
-	MV(CP(ABE_MCBSP2_DR) , ( IEN | OFF_EN | OFF_OUT_PTD | M0))  /* abe_mcbsp2_dr */ \
-	MV(CP(ABE_MCBSP2_DX) , ( OFF_EN | OFF_OUT_PTD | M0))  /* abe_mcbsp2_dx */ \
-	MV(CP(ABE_MCBSP2_FSX) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* abe_mcbsp2_fsx */ \
-	MV(CP(ABE_MCBSP1_CLKX) , ( IEN | M1))  /* abe_slimbus1_clock */ \
-	MV(CP(ABE_MCBSP1_DR) , ( IEN | M1))  /* abe_slimbus1_data */ \
-	MV(CP(ABE_MCBSP1_DX) , ( OFF_EN | OFF_OUT_PTD | M0))  /* abe_mcbsp1_dx */ \
-	MV(CP(ABE_MCBSP1_FSX) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* abe_mcbsp1_fsx */ \
-	MV(CP(ABE_PDM_UL_DATA) , ( PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* abe_pdm_ul_data */ \
-	MV(CP(ABE_PDM_DL_DATA) , ( PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* abe_pdm_dl_data */ \
-	MV(CP(ABE_PDM_FRAME) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* abe_pdm_frame */ \
-	MV(CP(ABE_PDM_LB_CLK) , ( PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* abe_pdm_lb_clk */ \
-	MV(CP(ABE_CLKS) , ( PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* abe_clks */ \
-	MV(CP(ABE_DMIC_CLK1) , ( M0))  /* abe_dmic_clk1 */ \
-	MV(CP(ABE_DMIC_DIN1) , ( IEN | M0))  /* abe_dmic_din1 */ \
-	MV(CP(ABE_DMIC_DIN2) , ( IEN | M0))  /* abe_dmic_din2 */ \
-	MV(CP(ABE_DMIC_DIN3) , ( IEN | M0))  /* abe_dmic_din3 */ \
-	MV(CP(UART2_CTS) , ( PTU | IEN | M0))  /* uart2_cts */ \
-	MV(CP(UART2_RTS) , ( M0))  /* uart2_rts */ \
-	MV(CP(UART2_RX) , ( PTU | IEN | M0))  /* uart2_rx */ \
-	MV(CP(UART2_TX) , ( M0))  /* uart2_tx */ \
-	MV(CP(HDQ_SIO) , ( M3))  /* gpio_127 */ \
-	MV(CP(I2C1_SCL) , ( PTU | IEN | M0))  /* i2c1_scl */ \
-	MV(CP(I2C1_SDA) , ( PTU | IEN | M0))  /* i2c1_sda */ \
-	MV(CP(I2C2_SCL) , ( PTU | IEN | M0))  /* i2c2_scl */ \
-	MV(CP(I2C2_SDA) , ( PTU | IEN | M0))  /* i2c2_sda */ \
-	MV(CP(I2C3_SCL) , ( PTU | IEN | M0))  /* i2c3_scl */ \
-	MV(CP(I2C3_SDA) , ( PTU | IEN | M0))  /* i2c3_sda */ \
-	MV(CP(I2C4_SCL) , ( PTU | IEN | M0))  /* i2c4_scl */ \
-	MV(CP(I2C4_SDA) , ( PTU | IEN | M0))  /* i2c4_sda */ \
-	MV(CP(MCSPI1_CLK) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* mcspi1_clk */ \
-	MV(CP(MCSPI1_SOMI) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* mcspi1_somi */ \
-	MV(CP(MCSPI1_SIMO) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* mcspi1_simo */ \
-	MV(CP(MCSPI1_CS0) , ( PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* mcspi1_cs0 */ \
-	MV(CP(MCSPI1_CS1) , ( PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M3))  /* mcspi1_cs1 */ \
-	MV(CP(MCSPI1_CS2) , ( PTU | OFF_EN | OFF_OUT_PTU | M3))  /* gpio_139 */ \
-	MV(CP(MCSPI1_CS3) , ( PTU | IEN | M3))  /* gpio_140 */ \
-	MV(CP(UART3_CTS_RCTX) , ( PTU | IEN | M0))  /* uart3_tx */ \
-	MV(CP(UART3_RTS_SD) , ( M0))  /* uart3_rts_sd */ \
-	MV(CP(UART3_RX_IRRX) , ( IEN | M0))  /* uart3_rx */ \
-	MV(CP(UART3_TX_IRTX) , ( M0))  /* uart3_tx */ \
-	MV(CP(SDMMC5_CLK) , ( PTU | IEN | OFF_EN | OFF_OUT_PTD | M0))  /* sdmmc5_clk */ \
-	MV(CP(SDMMC5_CMD) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc5_cmd */ \
-	MV(CP(SDMMC5_DAT0) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc5_dat0 */ \
-	MV(CP(SDMMC5_DAT1) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc5_dat1 */ \
-	MV(CP(SDMMC5_DAT2) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc5_dat2 */ \
-	MV(CP(SDMMC5_DAT3) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* sdmmc5_dat3 */ \
-	MV(CP(MCSPI4_CLK) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* mcspi4_clk */ \
-	MV(CP(MCSPI4_SIMO) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* mcspi4_simo */ \
-	MV(CP(MCSPI4_SOMI) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* mcspi4_somi */ \
-	MV(CP(MCSPI4_CS0) , ( PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* mcspi4_cs0 */ \
-	MV(CP(UART4_RX) , ( IEN | M0))  /* uart4_rx */ \
-	MV(CP(UART4_TX) , ( M0))  /* uart4_tx */ \
-	MV(CP(USBB2_ULPITLL_CLK) , ( IEN | M3))  /* gpio_157 */ \
-	MV(CP(USBB2_ULPITLL_STP) , ( IEN | M5))  /* dispc2_data23 */ \
-	MV(CP(USBB2_ULPITLL_DIR) , ( IEN | M5))  /* dispc2_data22 */ \
-	MV(CP(USBB2_ULPITLL_NXT) , ( IEN | M5))  /* dispc2_data21 */ \
-	MV(CP(USBB2_ULPITLL_DAT0) , ( IEN | M5))  /* dispc2_data20 */ \
-	MV(CP(USBB2_ULPITLL_DAT1) , ( IEN | M5))  /* dispc2_data19 */ \
-	MV(CP(USBB2_ULPITLL_DAT2) , ( IEN | M5))  /* dispc2_data18 */ \
-	MV(CP(USBB2_ULPITLL_DAT3) , ( IEN | M5))  /* dispc2_data15 */ \
-	MV(CP(USBB2_ULPITLL_DAT4) , ( IEN | M5))  /* dispc2_data14 */ \
-	MV(CP(USBB2_ULPITLL_DAT5) , ( IEN | M5))  /* dispc2_data13 */ \
-	MV(CP(USBB2_ULPITLL_DAT6) , ( IEN | M5))  /* dispc2_data12 */ \
-	MV(CP(USBB2_ULPITLL_DAT7) , ( IEN | M5))  /* dispc2_data11 */ \
-	MV(CP(USBB2_HSIC_DATA) , ( PTD | OFF_EN | OFF_OUT_PTU | M3))  /* gpio_169 */ \
-	MV(CP(USBB2_HSIC_STROBE) , ( PTD | OFF_EN | OFF_OUT_PTU | M3))  /* gpio_170 */ \
-	MV(CP(UNIPRO_TX0) , ( PTD | IEN | M3))  /* gpio_171 */ \
-	MV(CP(UNIPRO_TY0) , ( OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_col1 */ \
-	MV(CP(UNIPRO_TX1) , ( OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_col2 */ \
-	MV(CP(UNIPRO_TY1) , ( OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_col3 */ \
-	MV(CP(UNIPRO_TX2) , ( PTU | IEN | M3))  /* gpio_0 */ \
-	MV(CP(UNIPRO_TY2) , ( PTU | IEN | M3))  /* gpio_1 */ \
-	MV(CP(UNIPRO_RX0) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_row0 */ \
-	MV(CP(UNIPRO_RY0) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_row1 */ \
-	MV(CP(UNIPRO_RX1) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_row2 */ \
-	MV(CP(UNIPRO_RY1) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_row3 */ \
-	MV(CP(UNIPRO_RX2) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_row4 */ \
-	MV(CP(UNIPRO_RY2) , ( PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1))  /* kpd_row5 */ \
-	MV(CP(USBA0_OTG_CE) , ( PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M0))  /* usba0_otg_ce */ \
-	MV(CP(USBA0_OTG_DP) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* usba0_otg_dp */ \
-	MV(CP(USBA0_OTG_DM) , ( IEN | OFF_EN | OFF_PD | OFF_IN | M0))  /* usba0_otg_dm */ \
-	MV(CP(FREF_CLK1_OUT) , ( M0))  /* fref_clk1_out */ \
-	MV(CP(FREF_CLK2_OUT) , ( PTD | IEN | M3))  /* gpio_182 */ \
-	MV(CP(SYS_NIRQ1) , ( PTU | IEN | M0))  /* sys_nirq1 */ \
-	MV(CP(SYS_NIRQ2) , ( PTU | IEN | M0))  /* sys_nirq2 */ \
-	MV(CP(SYS_BOOT0) , ( PTU | IEN | M3))  /* gpio_184 */ \
-	MV(CP(SYS_BOOT1) , ( M3))  /* gpio_185 */ \
-	MV(CP(SYS_BOOT2) , ( PTD | IEN | M3))  /* gpio_186 */ \
-	MV(CP(SYS_BOOT3) , ( M3))  /* gpio_187 */ \
-	MV(CP(SYS_BOOT4) , ( M3))  /* gpio_188 */ \
-	MV(CP(SYS_BOOT5) , ( PTD | IEN | M3))  /* gpio_189 */ \
-	MV(CP(DPM_EMU0) , ( IEN | M0))  /* dpm_emu0 */ \
-	MV(CP(DPM_EMU1) , ( IEN | M0))  /* dpm_emu1 */ \
-	MV(CP(DPM_EMU2) , ( IEN | M0))  /* dpm_emu2 */ \
-	MV(CP(DPM_EMU3) , ( IEN | M5))  /* dispc2_data10 */ \
-	MV(CP(DPM_EMU4) , ( IEN | M5))  /* dispc2_data9 */ \
-	MV(CP(DPM_EMU5) , ( IEN | M5))  /* dispc2_data16 */ \
-	MV(CP(DPM_EMU6) , ( IEN | M5))  /* dispc2_data17 */ \
-	MV(CP(DPM_EMU7) , ( IEN | M5))  /* dispc2_hsync */ \
-	MV(CP(DPM_EMU8) , ( IEN | M5))  /* dispc2_pclk */ \
-	MV(CP(DPM_EMU9) , ( IEN | M5))  /* dispc2_vsync */ \
-	MV(CP(DPM_EMU10) , ( IEN | M5))  /* dispc2_de */ \
-	MV(CP(DPM_EMU11) , ( IEN | M5))  /* dispc2_data8 */ \
-	MV(CP(DPM_EMU12) , ( IEN | M5))  /* dispc2_data7 */ \
-	MV(CP(DPM_EMU13) , ( IEN | M5))  /* dispc2_data6 */ \
-	MV(CP(DPM_EMU14) , ( IEN | M5))  /* dispc2_data5 */ \
-	MV(CP(DPM_EMU15) , ( IEN | M5))  /* dispc2_data4 */ \
-	MV(CP(DPM_EMU16) , ( M3))  /* gpio_27 */ \
-	MV(CP(DPM_EMU17) , ( IEN | M5))  /* dispc2_data2 */ \
-	MV(CP(DPM_EMU18) , ( IEN | M5))  /* dispc2_data1 */ \
-	MV(CP(DPM_EMU19) , ( IEN | M5))  /* dispc2_data0 */ \
-	MV1(WK(PAD0_SIM_IO) , ( IEN | M0))  /* sim_io */ \
-	MV1(WK(PAD1_SIM_CLK) , ( M0))  /* sim_clk */ \
-	MV1(WK(PAD0_SIM_RESET) , ( M0))  /* sim_reset */ \
-	MV1(WK(PAD1_SIM_CD) , ( PTU | IEN | M0))  /* sim_cd */ \
-	MV1(WK(PAD0_SIM_PWRCTRL) , ( M0))  /* sim_pwrctrl */ \
-	MV1(WK(PAD1_SR_SCL) , ( PTU | IEN | M0))  /* sr_scl */ \
-	MV1(WK(PAD0_SR_SDA) , ( PTU | IEN | M0))  /* sr_sda */ \
-	MV1(WK(PAD1_FREF_XTAL_IN) , ( M0))  /* # */ \
-	MV1(WK(PAD0_FREF_SLICER_IN) , ( M0))  /* fref_slicer_in */ \
-	MV1(WK(PAD1_FREF_CLK_IOREQ) , ( M0))  /* fref_clk_ioreq */ \
-	MV1(WK(PAD0_FREF_CLK0_OUT) , ( M2))  /* sys_drm_msecure */ \
-	MV1(WK(PAD1_FREF_CLK3_REQ) , ( PTU | IEN | M0))  /* # */ \
-	MV1(WK(PAD0_FREF_CLK3_OUT) , ( M0))  /* fref_clk3_out */ \
-	MV1(WK(PAD1_FREF_CLK4_REQ) , ( PTU | IEN | M0))  /* # */ \
-	MV1(WK(PAD0_FREF_CLK4_OUT) , ( M0))  /* # */ \
-	MV1(WK(PAD1_SYS_32K) , ( IEN | M0))  /* sys_32k */ \
-	MV1(WK(PAD0_SYS_NRESPWRON) , ( M0))  /* sys_nrespwron */ \
-	MV1(WK(PAD1_SYS_NRESWARM) , ( M0))  /* sys_nreswarm */ \
-	MV1(WK(PAD0_SYS_PWR_REQ) , ( PTU | M0))  /* sys_pwr_req */ \
-	MV1(WK(PAD1_SYS_PWRON_RESET) , ( M3))  /* gpio_wk29 */ \
-	MV1(WK(PAD0_SYS_BOOT6) , ( IEN | M3))  /* gpio_wk9 */ \
-	MV1(WK(PAD1_SYS_BOOT7) , ( IEN | M3))  /* gpio_wk10 */ \
-	MV1(WK(PAD1_FREF_CLK3_REQ),     (M3)) /* gpio_wk30 */ \
-	MV1(WK(PAD1_FREF_CLK4_REQ),     (M3)) /* gpio_wk7 */ \
-	MV1(WK(PAD0_FREF_CLK4_OUT),     (M3)) /* gpio_wk8 */
+struct omap4panda_mux {
+	unsigned int ads;
+	unsigned int value;
+};
 
-#define MUX_DEFAULT_OMAP4_ALL() \
-  	MV(CP(GPMC_AD0),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* sdmmc2_dat0 */ \
-	MV(CP(GPMC_AD1),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* sdmmc2_dat1 */ \
-	MV(CP(GPMC_AD2),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* sdmmc2_dat2 */ \
-	MV(CP(GPMC_AD3),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* sdmmc2_dat3 */ \
-	MV(CP(GPMC_AD4),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* sdmmc2_dat4 */ \
-	MV(CP(GPMC_AD5),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* sdmmc2_dat5 */ \
-	MV(CP(GPMC_AD6),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* sdmmc2_dat6 */ \
-	MV(CP(GPMC_AD7),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* sdmmc2_dat7 */ \
-	MV(CP(GPMC_AD8),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M3)) /* gpio_32 */ \
-	MV(CP(GPMC_AD9),	(M3_SAFE)) /* gpio_33 */ \
-	MV(CP(GPMC_AD10),	(M3_SAFE)) /* gpio_34 */ \
-	MV(CP(GPMC_AD11),	(M3_SAFE)) /* gpio_35 */ \
-	MV(CP(GPMC_AD12),	(M3_SAFE)) /* gpio_36 */ \
-	MV(CP(GPMC_AD13),	(PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3)) /* gpio_37 */ \
-	MV(CP(GPMC_AD14),	(PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3)) /* gpio_38 */ \
-	MV(CP(GPMC_AD15),	(PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3)) /* gpio_39 */ \
-	MV(CP(GPMC_A16),	(M3_SAFE)) /* gpio_40 */ \
-	MV(CP(GPMC_A17),	(M3_SAFE)) /* gpio_41 */ \
-	MV(CP(GPMC_A18),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_row6 */ \
-	MV(CP(GPMC_A19),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_row7 */ \
-	MV(CP(GPMC_A20),	(M3_SAFE)) /* gpio_44 */ \
-	MV(CP(GPMC_A21),	(M3_SAFE)) /* gpio_45 */ \
-	MV(CP(GPMC_A22),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_col6 */ \
-	MV(CP(GPMC_A23),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_col7 */ \
-	MV(CP(GPMC_A24),	(M3_SAFE)) /* gpio_48 */ \
-	MV(CP(GPMC_A25),	(M3_SAFE)) /* gpio_49 */ \
-	MV(CP(GPMC_NCS0),	(M0)) /* gpmc_ncs0 */ \
-	MV(CP(GPMC_NCS1),	(M3_SAFE)) /* gpio_51 */ \
-	MV(CP(GPMC_NCS2),	(M3_SAFE)) /* gpio_52 */ \
-	MV(CP(GPMC_NCS3),	(M3_SAFE)) /* gpio_53 */ \
-	MV(CP(GPMC_NWP),	(M0_SAFE)) /* gpmc_nwp */ \
-	MV(CP(GPMC_CLK),	(M3_SAFE)) /* gpio_55 */ \
-	MV(CP(GPMC_NADV_ALE),	(M0)) /* gpmc_nadv_ale */ \
-	MV(CP(GPMC_NOE),	(PTU | OFF_EN | OFF_OUT_PTD | M1)) /* sdmmc2_clk */ \
-	MV(CP(GPMC_NWE),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* sdmmc2_cmd */ \
-	MV(CP(GPMC_NBE0_CLE),	(M0)) /* gpmc_nbe0_cle*/ \
-	MV(CP(GPMC_NBE1),	(M3_SAFE)) /* gpio_60 */ \
-	MV(CP(GPMC_WAIT0),	(M0)) /* gpmc_wait */ \
-	MV(CP(GPMC_WAIT1),	(PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3)) /* gpio_39 */ \
-	MV(CP(C2C_DATA11),	(M3_SAFE)) /* gpio_100 */ \
-	MV(CP(C2C_DATA12),	(M1_SAFE)) /* dsi1_te0 */ \
-	MV(CP(C2C_DATA13),	(M3_SAFE)) /* gpio_102 */ \
-	MV(CP(C2C_DATA14),	(M1_SAFE)) /* dsi2_te0 */ \
-	MV(CP(C2C_DATA15),	(M3_SAFE)) /* gpio_104 */ \
-	MV(CP(HDMI_HPD),	(M0_SAFE)) /* hdmi_hpd */ \
-	MV(CP(HDMI_CEC),	(M0_SAFE)) /* hdmi_cec */ \
-	MV(CP(HDMI_DDC_SCL),	(M0_SAFE)) /* hdmi_ddc_scl */ \
-	MV(CP(HDMI_DDC_SDA),	(M0_SAFE)) /* hdmi_ddc_sda */ \
-	MV(CP(CSI21_DX0),	(M0_SAFE)) /* csi21_dx0 */ \
-	MV(CP(CSI21_DY0),	(M0_SAFE)) /* csi21_dy0 */ \
-	MV(CP(CSI21_DX1),	(M0_SAFE)) /* csi21_dx1 */ \
-	MV(CP(CSI21_DY1),	(M0_SAFE)) /* csi21_dy1 */ \
-	MV(CP(CSI21_DX2),	(M0_SAFE)) /* csi21_dx2 */ \
-	MV(CP(CSI21_DY2),	(M0_SAFE)) /* csi21_dy2 */ \
-	MV(CP(CSI21_DX3),	(M0_SAFE)) /* csi21_dx3 */ \
-	MV(CP(CSI21_DY3),	(M0_SAFE)) /* csi21_dy3 */ \
-	MV(CP(CSI21_DX4),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M3)) /* gpi_75 */ \
-	MV(CP(CSI21_DY4),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M3)) /* gpi_76 */ \
-	MV(CP(CSI22_DX0),	(M0_SAFE)) /* csi22_dx0 */ \
-	MV(CP(CSI22_DY0),	(M0_SAFE)) /* csi22_dy0 */ \
-	MV(CP(CSI22_DX1),	(M0_SAFE)) /* csi22_dx1 */ \
-	MV(CP(CSI22_DY1),	(M0_SAFE)) /* csi22_dy1 */ \
-	MV(CP(CAM_SHUTTER),	(PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M0)) /* cam_shutter */ \
-	MV(CP(CAM_STROBE),	(PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M0)) /* cam_strobe */ \
-	MV(CP(CAM_GLOBALRESET),	(PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3)) /* gpio_83 */ \
-	MV(CP(USBB1_ULPITLL_CLK),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_clk */ \
-	MV(CP(USBB1_ULPITLL_STP),	(PTU | OFF_EN | OFF_OUT_PTD | M4)) /* usbb1_ulpiphy_stp */ \
-	MV(CP(USBB1_ULPITLL_DIR),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_dir */ \
-	MV(CP(USBB1_ULPITLL_NXT),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_nxt */ \
-	MV(CP(USBB1_ULPITLL_DAT0),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_dat0 */ \
-	MV(CP(USBB1_ULPITLL_DAT1),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_dat1 */ \
-	MV(CP(USBB1_ULPITLL_DAT2),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_dat2 */ \
-	MV(CP(USBB1_ULPITLL_DAT3),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_dat3 */ \
-	MV(CP(USBB1_ULPITLL_DAT4),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_dat4 */ \
-	MV(CP(USBB1_ULPITLL_DAT5),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_dat5 */ \
-	MV(CP(USBB1_ULPITLL_DAT6),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_dat6 */ \
-	MV(CP(USBB1_ULPITLL_DAT7),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4)) /* usbb1_ulpiphy_dat7 */ \
-	MV(CP(USBB1_HSIC_DATA),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* usbb1_hsic_data */ \
-	MV(CP(USBB1_HSIC_STROBE),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* usbb1_hsic_strobe */ \
-	MV(CP(USBC1_ICUSB_DP),	(M0_SAFE)) /* usbc1_icusb_dp */ \
-	MV(CP(USBC1_ICUSB_DM),	(M0_SAFE)) /* usbc1_icusb_dm */ \
-	MV(CP(SDMMC1_CLK),	(PTU | OFF_EN | OFF_OUT_PTD | M0)) /* sdmmc1_clk */ \
-	MV(CP(SDMMC1_CMD),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc1_cmd */ \
-	MV(CP(SDMMC1_DAT0),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc1_dat0 */ \
-	MV(CP(SDMMC1_DAT1),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc1_dat1 */ \
-	MV(CP(SDMMC1_DAT2),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc1_dat2 */ \
-	MV(CP(SDMMC1_DAT3),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc1_dat3 */ \
-	MV(CP(SDMMC1_DAT4),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc1_dat4 */ \
-	MV(CP(SDMMC1_DAT5),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc1_dat5 */ \
-	MV(CP(SDMMC1_DAT6),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc1_dat6 */ \
-	MV(CP(SDMMC1_DAT7),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc1_dat7 */ \
-	MV(CP(ABE_MCBSP2_CLKX),	(IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* abe_mcbsp2_clkx */ \
-	MV(CP(ABE_MCBSP2_DR),	(IEN | OFF_EN | OFF_OUT_PTD | M0)) /* abe_mcbsp2_dr */ \
-	MV(CP(ABE_MCBSP2_DX),	(OFF_EN | OFF_OUT_PTD | M0)) /* abe_mcbsp2_dx */ \
-	MV(CP(ABE_MCBSP2_FSX),	(IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* abe_mcbsp2_fsx */ \
-	MV(CP(ABE_MCBSP1_CLKX),	(M1_SAFE)) /* abe_slimbus1_clock */ \
-	MV(CP(ABE_MCBSP1_DR),	(M1_SAFE)) /* abe_slimbus1_data */ \
-	MV(CP(ABE_MCBSP1_DX),	(OFF_EN | OFF_OUT_PTD | M0)) /* abe_mcbsp1_dx */ \
-	MV(CP(ABE_MCBSP1_FSX),	(IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* abe_mcbsp1_fsx */ \
-	MV(CP(ABE_PDM_UL_DATA),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0_SAFE)) /* abe_pdm_ul_data */ \
-	MV(CP(ABE_PDM_DL_DATA),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0_SAFE)) /* abe_pdm_dl_data */ \
-	MV(CP(ABE_PDM_FRAME),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0_SAFE)) /* abe_pdm_frame */ \
-	MV(CP(ABE_PDM_LB_CLK),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0_SAFE)) /* abe_pdm_lb_clk */ \
-	MV(CP(ABE_CLKS),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0_SAFE)) /* abe_clks */ \
-	MV(CP(ABE_DMIC_CLK1),	(M0_SAFE)) /* abe_dmic_clk1 */ \
-	MV(CP(ABE_DMIC_DIN1),	(M0_SAFE)) /* abe_dmic_din1 */ \
-	MV(CP(ABE_DMIC_DIN2),	(M0_SAFE)) /* abe_dmic_din2 */ \
-	MV(CP(ABE_DMIC_DIN3),	(M0_SAFE)) /* abe_dmic_din3 */ \
-	MV(CP(UART2_CTS),	(PTU | IEN | M0)) /* uart2_cts */ \
-	MV(CP(UART2_RTS),	(M0)) /* uart2_rts */ \
-	MV(CP(UART2_RX),	(PTU | IEN | M0)) /* uart2_rx */ \
-	MV(CP(UART2_TX),	(M0)) /* uart2_tx */ \
-	MV(CP(HDQ_SIO),	(M3_SAFE)) /* gpio_127 */ \
-	MV(CP(I2C1_SCL),	(PTU | IEN | M0)) /* i2c1_scl */ \
-	MV(CP(I2C1_SDA),	(PTU | IEN | M0)) /* i2c1_sda */ \
-	MV(CP(I2C2_SCL),	(PTU | IEN | M0)) /* i2c2_scl */ \
-	MV(CP(I2C2_SDA),	(PTU | IEN | M0)) /* i2c2_sda */ \
-	MV(CP(I2C3_SCL),	(PTU | IEN | M0)) /* i2c3_scl */ \
-	MV(CP(I2C3_SDA),	(PTU | IEN | M0)) /* i2c3_sda */ \
-	MV(CP(I2C4_SCL),	(PTU | IEN | M0)) /* i2c4_scl */ \
-	MV(CP(I2C4_SDA),	(PTU | IEN | M0)) /* i2c4_sda */ \
-	MV(CP(MCSPI1_CLK),	(IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* mcspi1_clk */ \
-	MV(CP(MCSPI1_SOMI),	(IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* mcspi1_somi */ \
-	MV(CP(MCSPI1_SIMO),	(IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* mcspi1_simo */ \
-	MV(CP(MCSPI1_CS0),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* mcspi1_cs0 */ \
-	MV(CP(MCSPI1_CS1),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0_SAFE)) /* mcspi1_cs1 */ \
-	MV(CP(MCSPI1_CS2),	(OFF_EN | OFF_OUT_PTU | M3)) /* gpio_139 */ \
-	MV(CP(MCSPI1_CS3),	(M3_SAFE)) /* gpio_140 */ \
-	MV(CP(UART3_CTS_RCTX),	(PTU | IEN | M0)) /* uart3_tx */ \
-	MV(CP(UART3_RTS_SD),	(M0)) /* uart3_rts_sd */ \
-	MV(CP(UART3_RX_IRRX),	(IEN | M0)) /* uart3_rx */ \
-	MV(CP(UART3_TX_IRTX),	(M0)) /* uart3_tx */ \
-	MV(CP(SDMMC5_CLK),	(PTU | OFF_EN | OFF_OUT_PTD | M0)) /* sdmmc5_clk */ \
-	MV(CP(SDMMC5_CMD),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc5_cmd */ \
-	MV(CP(SDMMC5_DAT0),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc5_dat0 */ \
-	MV(CP(SDMMC5_DAT1),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc5_dat1 */ \
-	MV(CP(SDMMC5_DAT2),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc5_dat2 */ \
-	MV(CP(SDMMC5_DAT3),	(PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* sdmmc5_dat3 */ \
-	MV(CP(MCSPI4_CLK),	(IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* mcspi4_clk */ \
-	MV(CP(MCSPI4_SIMO),	(IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* mcspi4_simo */ \
-	MV(CP(MCSPI4_SOMI),	(IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* mcspi4_somi */ \
-	MV(CP(MCSPI4_CS0),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* mcspi4_cs0 */ \
-	MV(CP(UART4_RX),	(IEN | M0)) /* uart4_rx */ \
-	MV(CP(UART4_TX),	(M0)) /* uart4_tx */ \
-	MV(CP(USBB2_ULPITLL_CLK),	(M3)) /* gpio_157 */ \
-	MV(CP(USBB2_ULPITLL_STP),	(M5)) /* dispc2_data23 */ \
-	MV(CP(USBB2_ULPITLL_DIR),	(M5)) /* dispc2_data22 */ \
-	MV(CP(USBB2_ULPITLL_NXT),	(M5)) /* dispc2_data21 */ \
-	MV(CP(USBB2_ULPITLL_DAT0),	(M5)) /* dispc2_data20 */ \
-	MV(CP(USBB2_ULPITLL_DAT1),	(M5)) /* dispc2_data19 */ \
-	MV(CP(USBB2_ULPITLL_DAT2),	(M5)) /* dispc2_data18 */ \
-	MV(CP(USBB2_ULPITLL_DAT3),	(M5)) /* dispc2_data15 */ \
-	MV(CP(USBB2_ULPITLL_DAT4),	(M5)) /* dispc2_data14 */ \
-	MV(CP(USBB2_ULPITLL_DAT5),	(M5)) /* dispc2_data13 */ \
-	MV(CP(USBB2_ULPITLL_DAT6),	(M5)) /* dispc2_data12 */ \
-	MV(CP(USBB2_ULPITLL_DAT7),	(M5)) /* dispc2_data11 */ \
-	MV(CP(USBB2_HSIC_DATA),	(OFF_EN | OFF_OUT_PTU | M3)) /* gpio_169 */ \
-	MV(CP(USBB2_HSIC_STROBE),	(OFF_EN | OFF_OUT_PTU | M3)) /* gpio_170 */ \
-	MV(CP(UNIPRO_TX0),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_col0 */ \
-	MV(CP(UNIPRO_TY0),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_col1 */ \
-	MV(CP(UNIPRO_TX1),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_col2 */ \
-	MV(CP(UNIPRO_TY1),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_col3 */ \
-	MV(CP(UNIPRO_TX2),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M3)) /* gpio_0 */ \
-	MV(CP(UNIPRO_TY2),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M3)) /* gpio_1 */ \
-	MV(CP(UNIPRO_RX0),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_row0 */ \
-	MV(CP(UNIPRO_RY0),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_row1 */ \
-	MV(CP(UNIPRO_RX1),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_row2 */ \
-	MV(CP(UNIPRO_RY1),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_row3 */ \
-	MV(CP(UNIPRO_RX2),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_row4 */ \
-	MV(CP(UNIPRO_RY2),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M1)) /* kpd_row5 */ \
-	MV(CP(USBA0_OTG_CE),	(PTU | OFF_EN | OFF_PD | OFF_OUT_PTD | M0)) /* usba0_otg_ce */ \
-	MV(CP(USBA0_OTG_DP),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* usba0_otg_dp */ \
-	MV(CP(USBA0_OTG_DM),	(PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0)) /* usba0_otg_dm */ \
-	MV(CP(FREF_CLK1_OUT),	(M0_SAFE)) /* fref_clk1_out */ \
-	MV(CP(FREF_CLK2_OUT),	(M0_SAFE)) /* fref_clk2_out */ \
-	MV(CP(SYS_NIRQ1),	(PTU | IEN | M0)) /* sys_nirq1 */ \
-	MV(CP(SYS_NIRQ2),	(PTU | IEN | M0)) /* sys_nirq2 */ \
-	MV(CP(SYS_BOOT0),	(M3_SAFE)) /* gpio_184 */ \
-	MV(CP(SYS_BOOT1),	(M3_SAFE)) /* gpio_185 */ \
-	MV(CP(SYS_BOOT2),	(M3_SAFE)) /* gpio_186 */ \
-	MV(CP(SYS_BOOT3),	(M3_SAFE)) /* gpio_187 */ \
-	MV(CP(SYS_BOOT4),	(M3_SAFE)) /* gpio_188 */ \
-	MV(CP(SYS_BOOT5),	(M3_SAFE)) /* gpio_189 */ \
-	MV(CP(DPM_EMU0),	(M0_SAFE)) /* dpm_emu0 */ \
-	MV(CP(DPM_EMU1),	(M0_SAFE)) /* dpm_emu1 */ \
-	MV(CP(DPM_EMU2),	(M0_SAFE)) /* dpm_emu2 */ \
-	MV(CP(DPM_EMU3),	(M5)) /* dispc2_data10 */ \
-	MV(CP(DPM_EMU4),	(M5)) /* dispc2_data9 */ \
-	MV(CP(DPM_EMU5),	(M5)) /* dispc2_data16 */ \
-	MV(CP(DPM_EMU6),	(M5)) /* dispc2_data17 */ \
-	MV(CP(DPM_EMU7),	(M5)) /* dispc2_hsync */ \
-	MV(CP(DPM_EMU8),	(M5)) /* dispc2_pclk */ \
-	MV(CP(DPM_EMU9),	(M5)) /* dispc2_vsync */ \
-	MV(CP(DPM_EMU10),	(M5)) /* dispc2_de */ \
-	MV(CP(DPM_EMU11),	(M5)) /* dispc2_data8 */ \
-	MV(CP(DPM_EMU12),	(M5)) /* dispc2_data7 */ \
-	MV(CP(DPM_EMU13),	(M5)) /* dispc2_data6 */ \
-	MV(CP(DPM_EMU14),	(M5)) /* dispc2_data5 */ \
-	MV(CP(DPM_EMU15),	(M5)) /* dispc2_data4 */ \
-	MV(CP(DPM_EMU16),	(M5)) /* dispc2_data3/dmtimer8_pwm_evt */ \
-	MV(CP(DPM_EMU17),	(M5)) /* dispc2_data2 */ \
-	MV(CP(DPM_EMU18),	(M5)) /* dispc2_data1 */ \
-	MV(CP(DPM_EMU19),	(M5)) /* dispc2_data0 */ \
-	MV1(WK(PAD0_SIM_IO),	(M0_SAFE)) /* sim_io */ \
-	MV1(WK(PAD1_SIM_CLK),	(M0_SAFE)) /* sim_clk */ \
-	MV1(WK(PAD0_SIM_RESET),	(M0_SAFE)) /* sim_reset */ \
-	MV1(WK(PAD1_SIM_CD),	(M0_SAFE)) /* sim_cd */ \
-	MV1(WK(PAD0_SIM_PWRCTRL),	(M0_SAFE)) /* sim_pwrctrl */ \
-	MV1(WK(PAD1_SR_SCL),	(PTU | IEN | M0)) /* sr_scl */ \
-	MV1(WK(PAD0_SR_SDA),	(PTU | IEN | M0)) /* sr_sda */ \
-	MV1(WK(PAD1_FREF_XTAL_IN),	(M0_SAFE)) /* # */ \
-	MV1(WK(PAD0_FREF_SLICER_IN),	(M0_SAFE)) /* fref_slicer_in */ \
-	MV1(WK(PAD1_FREF_CLK_IOREQ),	(M0_SAFE)) /* fref_clk_ioreq */ \
-	MV1(WK(PAD0_FREF_CLK0_OUT),	(M0)) /* sys_drm_msecure */ \
-	MV1(WK(PAD1_FREF_CLK3_REQ),	(M0)) /* # */ \
-	MV1(WK(PAD0_FREF_CLK3_OUT),	(M0_SAFE)) /* fref_clk3_out */ \
-	MV1(WK(PAD1_FREF_CLK4_REQ),	(M0_SAFE)) /* # */ \
-	MV1(WK(PAD0_FREF_CLK4_OUT),	(M0_SAFE)) /* # */ \
-	MV1(WK(PAD1_SYS_32K),	(IEN | M0_SAFE)) /* sys_32k */ \
-	MV1(WK(PAD0_SYS_NRESPWRON),	(IEN | M0_SAFE)) /* sys_nrespwron */ \
-	MV1(WK(PAD1_SYS_NRESWARM),	(IEN | M0_SAFE)) /* sys_nreswarm */ \
-	MV1(WK(PAD0_SYS_PWR_REQ),	(M0_SAFE)) /* sys_pwr_req */ \
-	MV1(WK(PAD1_SYS_PWRON_RESET),	(M3_SAFE)) /* gpio_wk29 */ \
-	MV1(WK(PAD0_SYS_BOOT6),	(M3_SAFE)) /* gpio_wk9 */ \
-	MV1(WK(PAD1_SYS_BOOT7),	(M3_SAFE)) /* gpio_wk10 */ \
-	MV1(WK(PAD1_JTAG_TCK),	(IEN | M0)) /* jtag_tck */ \
-	MV1(WK(PAD0_JTAG_RTCK),	(M0)) /* jtag_rtck */ \
-	MV1(WK(PAD1_JTAG_TMS_TMSC),	(IEN | M0)) /* jtag_tms_tmsc */ \
-	MV1(WK(PAD0_JTAG_TDI),	(IEN | M0)) /* jtag_tdi */ \
-	MV1(WK(PAD1_JTAG_TDO),	(M0)) 		  /* jtag_tdo */ 
+static const struct omap4panda_mux omap4panda_mux[] = {
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD0),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* sdmmc2_dat0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD1),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* sdmmc2_dat1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD2),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* sdmmc2_dat2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD3),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* sdmmc2_dat3 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD4),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* sdmmc2_dat4 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD5),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* sdmmc2_dat5 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD6),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* sdmmc2_dat6 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD7),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* sdmmc2_dat7 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD8),
+		     PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M3  /* gpio_32 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD9),
+						PTU | IEN | M3  /* gpio_33 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD10),
+						PTU | IEN | M3  /* gpio_34 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD11),
+						PTU | IEN | M3  /* gpio_35 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD12),
+						PTU | IEN | M3  /* gpio_36 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD13),
+		      PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3  /* gpio_37 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD14),
+		      PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3  /* gpio_38 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_AD15),
+		      PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3  /* gpio_39 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A16), M3  /* gpio_40 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A17), PTD | M3  /* gpio_41 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A18),
+		    PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_row6 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A19),
+		    PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_row7 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A20),
+						      IEN | M3  /* gpio_44 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A21), M3  /* gpio_45 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A22), M3  /* gpio_46 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A23),
+				OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_col7 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A24), PTD | M3  /* gpio_48 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_A25), PTD | M3  /* gpio_49 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NCS0), M3  /* gpio_50 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NCS1), IEN | M3  /* gpio_51 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NCS2), IEN | M3  /* gpio_52 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NCS3), IEN | M3  /* gpio_53 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NWP), M3  /* gpio_54 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_CLK), PTD | M3  /* gpio_55 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NADV_ALE), M3  /* gpio_56 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NOE),
+		      PTU | IEN | OFF_EN | OFF_OUT_PTD | M1  /* sdmmc2_clk */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NWE),
+		  PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* sdmmc2_cmd */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NBE0_CLE), M3  /* gpio_59 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_NBE1), PTD | M3  /* gpio_60 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_WAIT0), PTU | IEN | M3  /* gpio_61 */ },
+	{ OMAP44XX_CTRL_BASE + CP(GPMC_WAIT1),
+		       PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3 /* gpio_62 */ },
+	{ OMAP44XX_CTRL_BASE + CP(C2C_DATA11), PTD | M3  /* gpio_100 */ },
+	{ OMAP44XX_CTRL_BASE + CP(C2C_DATA12), PTD | IEN | M3  /* gpio_101 */ },
+	{ OMAP44XX_CTRL_BASE + CP(C2C_DATA13), PTD | M3  /* gpio_102 */ },
+	{ OMAP44XX_CTRL_BASE + CP(C2C_DATA14), M1  /* dsi2_te0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(C2C_DATA15), PTD | M3  /* gpio_104 */ },
+	{ OMAP44XX_CTRL_BASE + CP(HDMI_HPD), M0  /* hdmi_hpd */ },
+	{ OMAP44XX_CTRL_BASE + CP(HDMI_CEC), M0  /* hdmi_cec */ },
+	{ OMAP44XX_CTRL_BASE + CP(HDMI_DDC_SCL), PTU | M0  /* hdmi_ddc_scl */ },
+	{ OMAP44XX_CTRL_BASE + CP(HDMI_DDC_SDA),
+					   PTU | IEN | M0  /* hdmi_ddc_sda */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DX0), IEN | M0  /* csi21_dx0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DY0), IEN | M0  /* csi21_dy0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DX1), IEN | M0  /* csi21_dx1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DY1), IEN | M0  /* csi21_dy1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DX2), IEN | M0  /* csi21_dx2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DY2), IEN | M0  /* csi21_dy2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DX3), PTD | M7  /* csi21_dx3 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DY3), PTD | M7  /* csi21_dy3 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DX4),
+			 PTD | OFF_EN | OFF_PD | OFF_IN | M7  /* csi21_dx4 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI21_DY4),
+			 PTD | OFF_EN | OFF_PD | OFF_IN | M7  /* csi21_dy4 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI22_DX0), IEN | M0  /* csi22_dx0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI22_DY0), IEN | M0  /* csi22_dy0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI22_DX1), IEN | M0  /* csi22_dx1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CSI22_DY1), IEN | M0  /* csi22_dy1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(CAM_SHUTTER),
+			OFF_EN | OFF_PD | OFF_OUT_PTD | M0  /* cam_shutter */ },
+	{ OMAP44XX_CTRL_BASE + CP(CAM_STROBE),
+			 OFF_EN | OFF_PD | OFF_OUT_PTD | M0  /* cam_strobe */ },
+	{ OMAP44XX_CTRL_BASE + CP(CAM_GLOBALRESET),
+		      PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M3  /* gpio_83 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_CLK),
+	   PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_clk */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_STP),
+			   OFF_EN | OFF_OUT_PTD | M4  /* usbb1_ulpiphy_stp */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_DIR),
+		 IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_dir */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_NXT),
+		 IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_nxt */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_DAT0),
+		IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_dat0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_DAT1),
+		IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_dat1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_DAT2),
+		IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_dat2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_DAT3),
+		IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_dat3 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_DAT4),
+		IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_dat4 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_DAT5),
+		IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_dat5 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_DAT6),
+		IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_dat6 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_ULPITLL_DAT7),
+		IEN | OFF_EN | OFF_PD | OFF_IN | M4  /* usbb1_ulpiphy_dat7 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_HSIC_DATA),
+		   IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* usbb1_hsic_data */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB1_HSIC_STROBE),
+		 IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* usbb1_hsic_strobe */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBC1_ICUSB_DP),
+					       IEN | M0  /* usbc1_icusb_dp */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBC1_ICUSB_DM),
+					       IEN | M0  /* usbc1_icusb_dm */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_CLK),
+			    PTU | OFF_EN | OFF_OUT_PTD | M0  /* sdmmc1_clk */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_CMD),
+		  PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc1_cmd */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_DAT0),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc1_dat0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_DAT1),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc1_dat1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_DAT2),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc1_dat2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_DAT3),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc1_dat3 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_DAT4),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc1_dat4 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_DAT5),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc1_dat5 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_DAT6),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc1_dat6 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC1_DAT7),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc1_dat7 */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_MCBSP2_CLKX),
+		   IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* abe_mcbsp2_clkx */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_MCBSP2_DR),
+			 IEN | OFF_EN | OFF_OUT_PTD | M0  /* abe_mcbsp2_dr */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_MCBSP2_DX),
+			       OFF_EN | OFF_OUT_PTD | M0  /* abe_mcbsp2_dx */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_MCBSP2_FSX),
+		    IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* abe_mcbsp2_fsx */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_MCBSP1_CLKX),
+					   IEN | M1  /* abe_slimbus1_clock */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_MCBSP1_DR),
+					    IEN | M1  /* abe_slimbus1_data */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_MCBSP1_DX),
+			       OFF_EN | OFF_OUT_PTD | M0  /* abe_mcbsp1_dx */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_MCBSP1_FSX),
+		    IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* abe_mcbsp1_fsx */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_PDM_UL_DATA),
+	     PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* abe_pdm_ul_data */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_PDM_DL_DATA),
+	     PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* abe_pdm_dl_data */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_PDM_FRAME),
+	       PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* abe_pdm_frame */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_PDM_LB_CLK),
+	      PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* abe_pdm_lb_clk */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_CLKS),
+		    PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* abe_clks */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_DMIC_CLK1), M0  /* abe_dmic_clk1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_DMIC_DIN1),
+						IEN | M0  /* abe_dmic_din1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_DMIC_DIN2),
+						IEN | M0  /* abe_dmic_din2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(ABE_DMIC_DIN3),
+						IEN | M0  /* abe_dmic_din3 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART2_CTS), PTU | IEN | M0  /* uart2_cts */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART2_RTS), M0  /* uart2_rts */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART2_RX), PTU | IEN | M0  /* uart2_rx */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART2_TX), M0  /* uart2_tx */ },
+	{ OMAP44XX_CTRL_BASE + CP(HDQ_SIO), M3  /* gpio_127 */ },
+	{ OMAP44XX_CTRL_BASE + CP(I2C1_SCL), PTU | IEN | M0  /* i2c1_scl */ },
+	{ OMAP44XX_CTRL_BASE + CP(I2C1_SDA), PTU | IEN | M0  /* i2c1_sda */ },
+	{ OMAP44XX_CTRL_BASE + CP(I2C2_SCL), PTU | IEN | M0  /* i2c2_scl */ },
+	{ OMAP44XX_CTRL_BASE + CP(I2C2_SDA), PTU | IEN | M0  /* i2c2_sda */ },
+	{ OMAP44XX_CTRL_BASE + CP(I2C3_SCL), PTU | IEN | M0  /* i2c3_scl */ },
+	{ OMAP44XX_CTRL_BASE + CP(I2C3_SDA), PTU | IEN | M0  /* i2c3_sda */ },
+	{ OMAP44XX_CTRL_BASE + CP(I2C4_SCL), PTU | IEN | M0  /* i2c4_scl */ },
+	{ OMAP44XX_CTRL_BASE + CP(I2C4_SDA), PTU | IEN | M0  /* i2c4_sda */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI1_CLK),
+			IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* mcspi1_clk */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI1_SOMI),
+		       IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* mcspi1_somi */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI1_SIMO),
+		       IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* mcspi1_simo */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI1_CS0),
+		  PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* mcspi1_cs0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI1_CS1),
+		  PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M3  /* mcspi1_cs1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI1_CS2),
+			      PTU | OFF_EN | OFF_OUT_PTU | M3  /* gpio_139 */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI1_CS3), PTU | IEN | M3  /* gpio_140 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART3_CTS_RCTX),
+					       PTU | IEN | M0  /* uart3_tx */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART3_RTS_SD), M0  /* uart3_rts_sd */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART3_RX_IRRX), IEN | M0  /* uart3_rx */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART3_TX_IRTX), M0  /* uart3_tx */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC5_CLK),
+		      PTU | IEN | OFF_EN | OFF_OUT_PTD | M0  /* sdmmc5_clk */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC5_CMD),
+		  PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc5_cmd */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC5_DAT0),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc5_dat0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC5_DAT1),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc5_dat1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC5_DAT2),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc5_dat2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SDMMC5_DAT3),
+		 PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* sdmmc5_dat3 */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI4_CLK),
+			IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* mcspi4_clk */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI4_SIMO),
+		       IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* mcspi4_simo */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI4_SOMI),
+		       IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* mcspi4_somi */ },
+	{ OMAP44XX_CTRL_BASE + CP(MCSPI4_CS0),
+		  PTD | IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* mcspi4_cs0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART4_RX), IEN | M0  /* uart4_rx */ },
+	{ OMAP44XX_CTRL_BASE + CP(UART4_TX), M0  /* uart4_tx */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_CLK),
+						     IEN | M3  /* gpio_157 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_STP),
+						IEN | M5  /* dispc2_data23 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_DIR),
+						IEN | M5  /* dispc2_data22 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_NXT),
+						IEN | M5  /* dispc2_data21 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_DAT0),
+						IEN | M5  /* dispc2_data20 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_DAT1),
+						IEN | M5  /* dispc2_data19 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_DAT2),
+						IEN | M5  /* dispc2_data18 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_DAT3),
+						IEN | M5  /* dispc2_data15 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_DAT4),
+						IEN | M5  /* dispc2_data14 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_DAT5),
+						IEN | M5  /* dispc2_data13 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_DAT6),
+						IEN | M5  /* dispc2_data12 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_ULPITLL_DAT7),
+						IEN | M5  /* dispc2_data11 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_HSIC_DATA),
+			      PTD | OFF_EN | OFF_OUT_PTU | M3  /* gpio_169 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBB2_HSIC_STROBE),
+			      PTD | OFF_EN | OFF_OUT_PTU | M3  /* gpio_170 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_TX0), PTD | IEN | M3  /* gpio_171 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_TY0),
+				OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_col1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_TX1),
+				OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_col2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_TY1),
+				OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_col3 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_TX2), PTU | IEN | M3  /* gpio_0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_TY2), PTU | IEN | M3  /* gpio_1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_RX0),
+		    PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_row0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_RY0),
+		    PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_row1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_RX1),
+		    PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_row2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_RY1),
+		    PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_row3 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_RX2),
+		    PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_row4 */ },
+	{ OMAP44XX_CTRL_BASE + CP(UNIPRO_RY2),
+		    PTU | IEN | OFF_EN | OFF_PD | OFF_IN | M1  /* kpd_row5 */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBA0_OTG_CE),
+		 PTD | OFF_EN | OFF_PD | OFF_OUT_PTD | M0  /* usba0_otg_ce */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBA0_OTG_DP),
+		      IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* usba0_otg_dp */ },
+	{ OMAP44XX_CTRL_BASE + CP(USBA0_OTG_DM),
+		      IEN | OFF_EN | OFF_PD | OFF_IN | M0  /* usba0_otg_dm */ },
+	{ OMAP44XX_CTRL_BASE + CP(FREF_CLK1_OUT), M0  /* fref_clk1_out */ },
+	{ OMAP44XX_CTRL_BASE + CP(FREF_CLK2_OUT),
+					       PTD | IEN | M3  /* gpio_182 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SYS_NIRQ1), PTU | IEN | M0  /* sys_nirq1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SYS_NIRQ2), M7  /* sys_nirq2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SYS_BOOT0), PTU | IEN | M3  /* gpio_184 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SYS_BOOT1), M3  /* gpio_185 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SYS_BOOT2), PTD | IEN | M3  /* gpio_186 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SYS_BOOT3), M3  /* gpio_187 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SYS_BOOT4), M3  /* gpio_188 */ },
+	{ OMAP44XX_CTRL_BASE + CP(SYS_BOOT5), PTD | IEN | M3  /* gpio_189 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU0), IEN | M0  /* dpm_emu0 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU1), IEN | M0  /* dpm_emu1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU2), IEN | M0  /* dpm_emu2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU3), IEN | M5  /* dispc2_data10 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU4), IEN | M5  /* dispc2_data9 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU5), IEN | M5  /* dispc2_data16 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU6), IEN | M5  /* dispc2_data17 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU7), IEN | M5  /* dispc2_hsync */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU8), IEN | M5  /* dispc2_pclk */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU9), IEN | M5  /* dispc2_vsync */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU10), IEN | M5  /* dispc2_de */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU11), IEN | M5  /* dispc2_data8 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU12), IEN | M5  /* dispc2_data7 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU13), IEN | M5  /* dispc2_data6 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU14), IEN | M5  /* dispc2_data5 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU15), IEN | M5  /* dispc2_data4 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU16), M3  /* gpio_27 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU17), IEN | M5  /* dispc2_data2 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU18), IEN | M5  /* dispc2_data1 */ },
+	{ OMAP44XX_CTRL_BASE + CP(DPM_EMU19), IEN | M5  /* dispc2_data0 */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_SIM_IO), IEN | M0  /* sim_io */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_SIM_CLK), M0  /* sim_clk */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_SIM_RESET), M0  /* sim_reset */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_SIM_CD),
+						 PTU | IEN | M0  /* sim_cd */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_SIM_PWRCTRL),
+							M0  /* sim_pwrctrl */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_SR_SCL),
+						 PTU | IEN | M0  /* sr_scl */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_SR_SDA),
+						 PTU | IEN | M0  /* sr_sda */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_FREF_XTAL_IN), M0  /* # */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_FREF_SLICER_IN),
+						     M0  /* fref_slicer_in */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_FREF_CLK_IOREQ),
+						     M0  /* fref_clk_ioreq */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_FREF_CLK0_OUT),
+						    M2  /* sys_drm_msecure */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_FREF_CLK3_REQ),
+						      PTU | IEN | M0  /* # */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_FREF_CLK3_OUT),
+						      M0  /* fref_clk3_out */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_FREF_CLK4_REQ),
+						      PTU | IEN | M0  /* # */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_FREF_CLK4_OUT), M0  /* # */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_SYS_32K), IEN | M0  /* sys_32k */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_SYS_NRESPWRON),
+						      M0  /* sys_nrespwron */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_SYS_NRESWARM),
+						       M0  /* sys_nreswarm */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_SYS_PWR_REQ),
+						  PTU | M0  /* sys_pwr_req */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_SYS_PWRON_RESET),
+							  M3  /* gpio_wk29 */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_SYS_BOOT6),
+						     IEN | M3  /* gpio_wk9 */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_SYS_BOOT7),
+						    IEN | M3  /* gpio_wk10 */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_FREF_CLK3_REQ),
+							   M3 /* gpio_wk30 */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD1_FREF_CLK4_REQ), M3 /* gpio_wk7 */ },
+	{ OMAP44XX_WKUP_CTRL_BASE + WK(PAD0_FREF_CLK4_OUT), M3 /* gpio_wk8 */ },
+};
 
 /**********************************************************
  * Routine: set_muxconf_regs
@@ -1203,8 +1153,10 @@ int dram_init(void)
  *********************************************************/
 void set_muxconf_regs(void)
 {
-	MUX_DEFAULT_OMAP4();
-	return;
+	int n;
+
+	for (n = 0; n < sizeof omap4panda_mux / sizeof omap4panda_mux[0]; n++)
+		__raw_writew(omap4panda_mux[n].value, omap4panda_mux[n].ads);
 }
 
 /******************************************************************************
@@ -1217,19 +1169,14 @@ void set_muxconf_regs(void)
 void update_mux(u32 btype, u32 mtype)
 {
 	/* REVISIT  */
-	return;
-
 }
 
-/* optionally do something like blinking LED */
-void board_hang (void)
-{ while (0) {};}
+void board_hang(void)
+{
+	spam_leds();
+}
 
 int nand_init(void)
 {
 	return 0;
-}
-void reset_phy(unsigned int base)
-{
-	*(volatile int*)(base + IODFT_TLGC) |= (1 << 10);
 }

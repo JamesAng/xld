@@ -1,5 +1,5 @@
 #
-# (C) Copyright 2000-2003
+# (C) Copyright 2006
 # Wolfgang Denk, DENX Software Engineering, wd@denx.de.
 #
 # See file CREDITS for list of people who contributed to this
@@ -21,23 +21,15 @@
 # MA 02111-1307 USA
 #
 
-include $(TOPDIR)/config.mk
-
-LIB	= lib$(CPU).a
-
-START	= start.o
-OBJS	= cpu.o  
-
-all:	.depend $(START) $(LIB)
-
-$(LIB):	$(OBJS)
-	$(AR) crv $@ $(OBJS)
-
 #########################################################################
 
-.depend:	Makefile $(START:.o=.S) $(OBJS:.o=.c)
-		$(CC) -M $(CFLAGS) $(START:.o=.S) $(OBJS:.o=.c) > $@
+_depend:	$(obj).depend
 
-sinclude .depend
+$(obj).depend: $(src)Makefile $(TOPDIR)/config.mk $(SRCS)
+		@rm -f $@
+		@for f in $(SRCS); do \
+			g=`basename $$f | sed -e 's/\(.*\)\.\w/\1.o/'`; \
+			$(CC) -M $(HOST_CFLAGS) $(CPPFLAGS) -MQ $(obj)$$g $$f >> $@ ; \
+		done
 
 #########################################################################

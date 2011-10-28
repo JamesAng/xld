@@ -1,5 +1,6 @@
 /*
- * (C) Copyright 2004 Texas Instruments
+ * November 2006 - Changed to support 3430sdp device 
+ * Copyright (c) 2004-2006 Texas Instruments 
  *
  * (C) Copyright 2002
  * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
@@ -29,20 +30,24 @@ ENTRY(_start)
 SECTIONS
 {
 	. = 0x00000000;
+
 	. = ALIGN(4);
-	.text	:
+	.text      :
 	{
-	  cpu/arm926ejs/start.o	(.text)
+	  cpu/omap3/start.o	(.text)
 	  *(.text)
 	}
+
 	. = ALIGN(4);
 	.rodata : { *(.rodata) }
+
 	. = ALIGN(4);
 	.data : { *(.data) }
+
 	. = ALIGN(4);
 	.got : { *(.got) }
 
- 	. = ALIGN(4);
+	. = ALIGN(4);
 	__bss_start = .;
 	.bss : { *(.bss) }
 	_end = .;

@@ -52,33 +52,29 @@ static block_dev_desc_t mmc_blk_dev;
 
 block_dev_desc_t *mmc_get_dev(int dev)
 {
-	return ((block_dev_desc_t *) &mmc_blk_dev);
+	return (block_dev_desc_t *)&mmc_blk_dev;
 }
 
 unsigned char mmc_board_init(void)
 {
-	unsigned int value = 0;
-
 	return 1;
 }
 
 void mmc_init_stream(void)
 {
-	volatile unsigned int mmc_stat;
-
 	OMAP_HSMMC_CON |= INIT_INITSTREAM;
 
 	OMAP_HSMMC_CMD = MMC_CMD0;
-	do {
-		mmc_stat = OMAP_HSMMC_STAT;
-	} while (!(mmc_stat & CC_MASK));
+
+	while (!(OMAP_HSMMC_STAT & CC_MASK))
+		;
 
 	OMAP_HSMMC_STAT = CC_MASK;
 
 	OMAP_HSMMC_CMD = MMC_CMD0;
-	do {
-		mmc_stat = OMAP_HSMMC_STAT;
-	} while (!(mmc_stat & CC_MASK));
+
+	while (!(OMAP_HSMMC_STAT & CC_MASK))
+		;
 
 	OMAP_HSMMC_STAT = OMAP_HSMMC_STAT;
 	OMAP_HSMMC_CON &= ~INIT_INITSTREAM;
@@ -107,8 +103,8 @@ unsigned char mmc_clock_config(unsigned int iclk, unsigned short clk_div)
 	mmc_reg_out(OMAP_HSMMC_SYSCTL,
 		    ICE_MASK | CLKD_MASK, (val << CLKD_OFFSET) | ICE_OSCILLATE);
 
-	while ((OMAP_HSMMC_SYSCTL & ICS_MASK) == ICS_NOTREADY) {
-	}
+	while ((OMAP_HSMMC_SYSCTL & ICS_MASK) == ICS_NOTREADY)
+		;
 
 	OMAP_HSMMC_SYSCTL |= CEN_ENABLE;
 	return 1;
@@ -121,10 +117,12 @@ unsigned char mmc_init_setup(void)
 	mmc_board_init();
 
 	OMAP_HSMMC_SYSCONFIG |= MMC_SOFTRESET;
-	while ((OMAP_HSMMC_SYSSTATUS & RESETDONE) == 0) ;
+	while ((OMAP_HSMMC_SYSSTATUS & RESETDONE) == 0)
+		;
 
 	OMAP_HSMMC_SYSCTL |= SOFTRESETALL;
-	while ((OMAP_HSMMC_SYSCTL & SOFTRESETALL) != 0x0) ;
+	while ((OMAP_HSMMC_SYSCTL & SOFTRESETALL) != 0x0)
+		;
 
 	OMAP_HSMMC_HCTL = DTW_1_BITMODE | SDBP_PWROFF | SDVS_3V0;
 	OMAP_HSMMC_CAPA |= VS30_3V0SUP | VS18_1V8SUP;
@@ -141,16 +139,17 @@ unsigned char mmc_init_setup(void)
 	OMAP_HSMMC_IE = 0x307f0033;
 
 	mmc_init_stream();
+
 	return 1;
 }
 
 unsigned char mmc_send_cmd(unsigned int cmd, unsigned int arg,
 			   unsigned int *response)
 {
-	volatile unsigned int mmc_stat;
+	unsigned int mmc_stat;
 
-	while ((OMAP_HSMMC_PSTATE & DATI_MASK) == DATI_CMDDIS) {
-	}
+	while ((OMAP_HSMMC_PSTATE & DATI_MASK) == DATI_CMDDIS)
+		;
 
 	OMAP_HSMMC_BLK = BLEN_512BYTESLEN | NBLK_STPCNT;
 	OMAP_HSMMC_STAT = 0xFFFFFFFF;
@@ -160,9 +159,9 @@ unsigned char mmc_send_cmd(unsigned int cmd, unsigned int arg,
 	    DE_DISABLE;
 
 	while (1) {
-		do {
-			mmc_stat = OMAP_HSMMC_STAT;
-		} while (mmc_stat == 0);
+		mmc_stat = OMAP_HSMMC_STAT;
+		if (mmc_stat == 0)
+			continue;
 
 		if ((mmc_stat & ERRI_MASK) != 0)
 			return (unsigned char) mmc_stat;
@@ -183,16 +182,16 @@ unsigned char mmc_send_cmd(unsigned int cmd, unsigned int arg,
 
 unsigned char mmc_read_data(unsigned int *output_buf)
 {
-	volatile unsigned int mmc_stat;
+	unsigned int mmc_stat;
 	unsigned int read_count = 0;
 
 	/*
 	 * Start Polled Read
 	 */
 	while (1) {
-		do {
-			mmc_stat = OMAP_HSMMC_STAT;
-		} while (mmc_stat == 0);
+		mmc_stat = OMAP_HSMMC_STAT;
+		if (mmc_stat == 0)
+			continue;
 
 		if ((mmc_stat & ERRI_MASK) != 0)
 			return (unsigned char) mmc_stat;
@@ -498,37 +497,35 @@ unsigned char configure_mmc(mmc_card_data *mmc_card_cur)
 	return 1;
 }
 unsigned long mmc_bread(int dev_num, unsigned long blknr, lbaint_t blkcnt,
-			void *dst)
+			unsigned long *dst)
 {
 	omap_mmc_read_sect(blknr, (blkcnt * MMCSD_SECTOR_SIZE), &cur_card_data,
-			   (unsigned long *) dst);
+			   dst);
 	return 1;
 }
 
 int mmc_init(int verbose)
 {
-	unsigned char ret;
+	unsigned char ret = configure_mmc(&cur_card_data);
 
-	ret = configure_mmc(&cur_card_data);
-
-	if (ret == 1) {
-		mmc_blk_dev.if_type = IF_TYPE_MMC;
-		mmc_blk_dev.part_type = PART_TYPE_DOS;
-		mmc_blk_dev.dev = 0;
-		mmc_blk_dev.lun = 0;
-		mmc_blk_dev.type = 0;
-
-		/* FIXME fill in the correct size (is set to 32MByte) */
-		mmc_blk_dev.blksz = MMCSD_SECTOR_SIZE;
-		mmc_blk_dev.lba = 0x10000;
-		mmc_blk_dev.removable = 0;
-		mmc_blk_dev.block_read = mmc_bread;
-
-		fat_register_device(&mmc_blk_dev, 1);
-		return 1;
-	}
-	else 
+	if (ret != 1)
 		return 0;
+
+	mmc_blk_dev.if_type = IF_TYPE_MMC;
+	mmc_blk_dev.part_type = PART_TYPE_DOS;
+	mmc_blk_dev.dev = 0;
+	mmc_blk_dev.lun = 0;
+	mmc_blk_dev.type = 0;
+
+	/* FIXME fill in the correct size (is set to 32MByte) */
+	mmc_blk_dev.blksz = MMCSD_SECTOR_SIZE;
+	mmc_blk_dev.lba = 0x10000;
+	mmc_blk_dev.removable = 0;
+	mmc_blk_dev.block_read = mmc_bread;
+
+	fat_register_device(&mmc_blk_dev, 1);
+
+	return 1;
 }
 
 int mmc_read(ulong src, uchar *dst, int size)
